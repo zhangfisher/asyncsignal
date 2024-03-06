@@ -1,0 +1,31 @@
+{
+  "name": "asyncsignal",
+  "version": "0.0.1",
+  "description": "Reusable asynchronous signals",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "homepage": "https://github.com/zhangfisher/asyncsignal",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:zhangfisher/asyncsignal.git"
+  },
+  "access": "public",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset version && changeset publish"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.0.2",
+    "typescript": "^5.3.3"
+  }
+}
