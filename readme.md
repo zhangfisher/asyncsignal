@@ -1,6 +1,6 @@
 # AsyncSignal
 
-Reusable asynchronous signals
+Reusable asynchronous signals,it's a like `Promise.withResolvers`
 
 [中文](./readme_CN.md)
 
@@ -53,7 +53,7 @@ signal.reset()
 ## Open Source Projects
 
 - [VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)
-- [speedform](https://zhangfisher.github.io/speed-form/)
+- [AutoStore](https://zhangfisher.github.io/autostore/)
 - [Logsets](https://zhangfisher.github.io/logsets/)
 - [VoerkaLogger](https://zhangfisher.github.io/voerkalogger/)
 - [FlexDecorators](https://zhangfisher.github.io/flex-decorators/)

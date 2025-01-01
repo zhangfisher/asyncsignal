@@ -1,8 +1,8 @@
 # AsyncSignal
 
-可复用的异步信号
+可复用的异步信号,类似`Promise.withResolvers`
 
-[中文](./readme_CN.md)
+[English](./readme.md)
 
 ## 安装
 
