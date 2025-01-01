@@ -23,6 +23,7 @@
     "promise.withResolvers",
     "async.signal"
   ],
+  "packageManager": "pnpm@9.0.0",
   "author": "wxzhang@126.com",
   "license": "MIT",
   "devDependencies": {
