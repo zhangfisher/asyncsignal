@@ -1,54 +1,142 @@
 # AsyncSignal
 
-可复用的异步信号
+一个用于JavaScript/TypeScript应用的可复用异步信号库。
 
-[中文](./readme_CN.md)
+[English](./readme.md)
 
 ## 安装
 
 ```ts
 pnpm add asyncsignal
-// or 
+// 或者 
 npm install asyncsignal
-// or 
+// 或者 
 yarn add asyncsignal
 ```
 
-## 用法
+## 特性
+
+- 🚦 **可复用信号**: 创建可以在重置后重复使用的异步信号
+- 🔒 **约束条件**: 支持添加必须满足的条件才能解析信号
+- ⏱️ **超时控制**: 为信号解析设置超时时间，支持自定义超时行为
+- 🎯 **信号状态**: 跟踪信号状态（等待中、已解析、已拒绝）
+- 🎮 **信号管理**: 使用AsyncSignalManager统一管理多个信号
+- 🔄 **重置能力**: 将信号重置到初始状态以便重复使用
+- 💪 **TypeScript支持**: 完整的TypeScript类型定义支持
+
+## 使用方法
+
+### 基础用法
 
 ```ts
 import { asyncSignal } from 'asyncsignal';
 
-// 创建一个异步信号，实质上就是Promise
+// 创建一个基础信号
 const signal = asyncSignal();
-// 指定一个约束函数，当执行resolve时需要同时满足约束函数返回true
-const signal = asyncSignal(()=>true);
-// 指定一个配置参数
-const signal = asyncSignal(()=>true,{timeout:100});
 
-// 等待resolved
-await signal()
-// 等待resolved，指定一个超时时间
-await signal(100)
-// 等待resolved，指定一个超时时间，如果超时则抛出错误
-await signal(100,new Error())  
-  
+// 等待信号解析
+await signal();
 
-signal.resolve('resolved value')
-signal.reject('rejected value') 
-signal.reject(new Error('rejected error'))
+// 解析信号
+signal.resolve('成功');
 
-// 信号状态检查
-signal.isPending() 
-signal.isResolved()
-signal.isRejected()
+// 拒绝信号
+signal.reject(new Error('发生错误'));
 
-// 重置信号
-signal.reset() 
-
+// 重置信号以便重用
+signal.reset();
 ```
 
-## 开源项目 
+### 高级特性
+
+#### 约束函数
+
+```ts
+// 只有当约束函数返回true时，信号才会被解析
+const signal = asyncSignal(() => someCondition === true);
+
+// 当约束条件不满足时，尝试解析会被忽略
+signal.resolve(); // 只有当someCondition === true时才会解析
+```
+
+#### 超时控制
+
+```ts
+// 创建带默认超时的信号
+const signal = asyncSignal(undefined, { timeout: 1000 });
+
+// 等待信号，设置超时和默认值
+await signal(2000); // 将在2秒后自动解析
+
+// 等待信号，设置超时和错误处理
+await signal(2000, new Error('发生超时')); // 将在2秒后抛出错误
+```
+
+#### 状态检查
+
+```ts
+const signal = asyncSignal();
+
+console.log(signal.isPending()); // 创建后为true
+console.log(signal.isResolved()); // 解析后为true
+console.log(signal.isRejected()); // 拒绝后为true
+```
+
+### 错误处理
+
+```ts
+import { asyncSignal, AsyncSignalAbort } from 'asyncsignal';
+
+// 处理信号销毁时的错误
+const signal = asyncSignal();
+try {
+  await signal();
+} catch (error) {
+  if (error instanceof AsyncSignalAbort) {
+    console.log('信号已被销毁');
+  }
+}
+```
+
+### 实现细节
+
+- 信号状态是互斥的（等待中、已解析、已拒绝）
+- 对非等待状态的信号调用`resolve()`或`reject()`会被忽略
+- 当约束函数返回false时调用`resolve()`会被静默忽略
+- `destroy()`方法会使用AsyncSignalAbort错误拒绝处于等待状态的信号
+
+### 管理多个信号
+
+```ts
+import { AsyncSignalManager } from 'asyncsignal';
+
+// 创建一个带默认超时的信号管理器
+const manager = new AsyncSignalManager({ timeout: 5000 });
+
+// 创建多个信号
+const signal1 = manager.create();
+const signal2 = manager.create(() => someCondition);
+
+// 解析所有信号，可以传入可选值
+manager.resolve('成功');
+
+// 拒绝所有信号
+manager.reject(new Error('批量操作失败'));
+
+// 重置所有信号以便重用
+manager.reset();
+
+// 销毁特定信号
+manager.destroy(signal1.id);
+
+// 销毁多个信号
+manager.destroy([signal1.id, signal2.id]);
+
+// 销毁所有信号
+manager.destroy();
+```
+
+## 开源项目
 
 - [全流程一健化React/Vue/Nodejs国际化方案 - VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)
 - [无以伦比的React表单开发库 - speedform](https://zhangfisher.github.io/speed-form/)

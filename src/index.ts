@@ -61,7 +61,7 @@ let AsyncSignalId = 0
 * @returns {function}
 */
 
-export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={timeout:0}) : IAsyncSignal {     
+export function asyncSignal(constraint?:()=>boolean) : IAsyncSignal {     
     let isResolved:boolean = false,isRejected:boolean = false,isPending:boolean = false
     let resolveSignal:Function, rejectSignal:Function, timeoutId:any = 0
     let objPromise:Promise<any> | null
@@ -114,7 +114,7 @@ export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={ti
         if(!isPending) return 
         if (isResolved || isRejected) return
         // 注意：是否真正resolve还受约束条件的约束，只有满足约束条件时才会真正resolve
-        if (typeof (constraint) === "function" && constraint()) {
+        if (typeof (constraint) === "function") {
             if(constraint()){
                 resolveSignal(result)
             }else{
