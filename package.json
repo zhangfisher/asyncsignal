@@ -1,7 +1,7 @@
 {
   "name": "asyncsignal",
-  "version": "0.0.1",
-  "description": "Reusable asynchronous signals",
+  "version": "0.0.2",
+  "description": "Reusable asynchronous signals,it's a like promisewithResolvers",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -17,15 +17,20 @@
   "scripts": {
     "build": "tsup",
     "changeset": "changeset",
-    "release": "pnpm build && changeset version && changeset publish"
+    "release": "changeset version && changeset publish"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "promise.withResolvers",
+    "async.signal"
+  ],
+  "packageManager": "pnpm@9.0.0",
+  "author": "wxzhang@126.com",
+  "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.11.24",
+    "@changesets/cli": "^2.27.11",
+    "@types/node": "^22.10.3",
     "ts-node": "^10.9.2",
-    "tsup": "^8.0.2",
-    "typescript": "^5.3.3"
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
   }
 }

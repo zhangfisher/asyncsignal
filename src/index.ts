@@ -32,13 +32,13 @@ export class AsyncSignalAbort extends Error {}
  
 export interface IAsyncSignal {
    (timeout?:number,returns?:any):Awaited<Promise<any>>
-   id:number
-   reset(): void
-   reject(e?:Error | string):void
+   id             : number
+   reset()        : void
+   reject(e?      : Error | string):void
    resolve(result?: any):void
-   destroy():void
-   isResolved():boolean
-   isRejected():boolean
+   destroy()      : void
+   isResolved()   : boolean
+   isRejected()   : boolean
    isPending():boolean
 }
 
@@ -81,7 +81,7 @@ export function asyncSignal(constraint?:()=>boolean) : IAsyncSignal {
     
     reset()
 
-   async function signal(timeout:number =0 , returns?:any){
+   async function signal(timeout:number = options.timeout, returns?:any){
         // 如果constraint返回的true，代表不需要等待
         if (typeof (constraint) === "function" && constraint()) {
             isResolved = true
