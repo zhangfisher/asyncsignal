@@ -42,6 +42,11 @@ export interface IAsyncSignal {
    isPending():boolean
 }
 
+export type AsyncSignalOptions = {
+    autoReset?:boolean              // 当再次调用时是否自动重置
+    timeout?:number
+}
+
 
 let AsyncSignalId = 0
 
@@ -61,7 +66,11 @@ let AsyncSignalId = 0
 * @returns {function}
 */
 
-export function asyncSignal(constraint?:()=>boolean) : IAsyncSignal {     
+export function asyncSignal(constraint?:()=>boolean,options?:AsyncSignalOptions) : IAsyncSignal {     
+    const opts = Object.assign({
+        autoReset:false,
+        timeout:0
+    },options)
     let isResolved:boolean = false,isRejected:boolean = false,isPending:boolean = false
     let resolveSignal:Function, rejectSignal:Function, timeoutId:any = 0
     let objPromise:Promise<any> | null
@@ -81,7 +90,7 @@ export function asyncSignal(constraint?:()=>boolean) : IAsyncSignal {
     
     reset()
 
-   async function signal(timeout:number = options.timeout, returns?:any){
+   async function signal(timeout:number = opts.timeout, returns?:any){
         // 如果constraint返回的true，代表不需要等待
         if (typeof (constraint) === "function" && constraint()) {
             isResolved = true
@@ -89,7 +98,7 @@ export function asyncSignal(constraint?:()=>boolean) : IAsyncSignal {
         }
 
         // 如果信号上次已经完成了，则需要重置信号
-        if (isResolved || isRejected) reset()
+        if (opts.autoReset && (isResolved || isRejected)) reset()
 
         // 指定超时功能
         if (timeout > 0) {
