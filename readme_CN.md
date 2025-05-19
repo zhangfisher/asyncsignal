@@ -139,7 +139,7 @@ manager.destroy();
 ## 开源项目
 
 - [全流程一健化React/Vue/Nodejs国际化方案 - VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)
-- [无以伦比的React表单开发库 - speedform](https://zhangfisher.github.io/speed-form/)
+- [无以伦比的Reac状态管理库 - AutoStore](https://zhangfisher.github.io/autostore/)
 - [终端界面开发增强库 - Logsets](https://zhangfisher.github.io/logsets/)
 - [简单的日志输出库 - VoerkaLogger](https://zhangfisher.github.io/voerkalogger/)
 - [装饰器开发 - FlexDecorators](https://zhangfisher.github.io/flex-decorators/)

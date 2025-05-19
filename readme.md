@@ -139,7 +139,7 @@ manager.destroy();
 ## Open Source Projects
 
 - [VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)
-- [speedform](https://zhangfisher.github.io/speed-form/)
+- [AutoStore](https://zhangfisher.github.io/autostore/)
 - [Logsets](https://zhangfisher.github.io/logsets/)
 - [VoerkaLogger](https://zhangfisher.github.io/voerkalogger/)
 - [FlexDecorators](https://zhangfisher.github.io/flex-decorators/)
