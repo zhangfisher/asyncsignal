@@ -8,9 +8,9 @@ Reusable asynchronous signals for JavaScript/TypeScript applications.
 
 ```ts
 pnpm add asyncsignal
-// or 
+// or
 npm install asyncsignal
-// or 
+// or
 yarn add asyncsignal
 ```
 
@@ -29,7 +29,7 @@ yarn add asyncsignal
 ### Basic Usage
 
 ```ts
-import { asyncSignal } from 'asyncsignal';
+import { asyncSignal } from "asyncsignal";
 
 // Create a basic signal
 const signal = asyncSignal();
@@ -38,10 +38,10 @@ const signal = asyncSignal();
 await signal();
 
 // Resolve the signal
-signal.resolve('success');
+signal.resolve("success");
 
 // Reject the signal
-signal.reject(new Error('something went wrong'));
+signal.reject(new Error("something went wrong"));
 
 // Reset the signal for reuse
 signal.reset();
@@ -69,7 +69,18 @@ const signal = asyncSignal(undefined, { timeout: 1000 });
 await signal(2000); // Will resolve after 2 seconds
 
 // Wait with timeout and error
-await signal(2000, new Error('Timeout occurred')); // Will reject with error after 2 seconds
+await signal(2000, new Error("Timeout occurred")); // Will reject with error after 2 seconds
+```
+
+#### Signal Events
+
+```ts
+import { asyncSignal } from "asyncsignal";
+const signal = asyncSignal();
+// when signal resolve/reject, after reset willtrigger
+signal.on((e?: Error, result?: any) => {});
+// when signal resolve/reject, after reset will not trigger
+signal.once((e?: Error, result?: any) => {});
 ```
 
 #### State Checking
@@ -85,7 +96,7 @@ console.log(signal.isRejected()); // true after rejection
 ### Error Handling
 
 ```ts
-import { asyncSignal, AsyncSignalAbort } from 'asyncsignal';
+import { asyncSignal, AsyncSignalAbort } from "asyncsignal";
 
 // Handle signal destruction
 const signal = asyncSignal();
@@ -93,7 +104,7 @@ try {
   await signal();
 } catch (error) {
   if (error instanceof AsyncSignalAbort) {
-    console.log('Signal was destroyed');
+    console.log("Signal was destroyed");
   }
 }
 ```
@@ -108,7 +119,7 @@ try {
 ### Managing Multiple Signals
 
 ```ts
-import { AsyncSignalManager } from 'asyncsignal';
+import { AsyncSignalManager } from "asyncsignal";
 
 // Create a signal manager with default timeout
 const manager = new AsyncSignalManager({ timeout: 5000 });
@@ -118,10 +129,10 @@ const signal1 = manager.create();
 const signal2 = manager.create(() => someCondition);
 
 // Resolve all signals with optional value
-manager.resolve('success');
+manager.resolve("success");
 
 // Reject all signals
-manager.reject(new Error('batch operation failed'));
+manager.reject(new Error("batch operation failed"));
 
 // Reset all signals for reuse
 manager.reset();

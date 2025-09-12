@@ -25,140 +25,191 @@
  *
  *  @param {Function} constraint 约束函数，指定当resolve或reject时，需要同时满足这个约束函数返回true才会进行resolve或reject
  *
- */ 
+ */
 
- 
 export class AsyncSignalAbort extends Error {}
- 
+
 export interface IAsyncSignal {
-   (timeout?:number,returns?:any):Awaited<Promise<any>>
-   id             : number
-   reset()        : void
-   reject(e?      : Error | string):void
-   resolve(result?: any):void
-   destroy()      : void
-   isResolved()   : boolean
-   isRejected()   : boolean
-   isPending():boolean
+  (timeout?: number, returns?: any): Awaited<Promise<any>>;
+  id: number;
+  reset(): void;
+  reject(e?: Error | string): void;
+  resolve(result?: any): void;
+  destroy(): void;
+  isResolved(): boolean;
+  isRejected(): boolean;
+  isPending(): boolean;
+  on(listener: AsyncSignalListener): void;
+  once(listener: AsyncSignalListener): void;
+  off(listener: AsyncSignalListener): void;
 }
 
 export type AsyncSignalOptions = {
-    autoReset?:boolean              // 当再次调用时是否自动重置
-    timeout?:number
-}
+  autoReset?: boolean; // 当再次调用时是否自动重置
+  timeout?: number;
+};
 
+let AsyncSignalId = 0;
 
-let AsyncSignalId = 0
+export type AsyncSignalListener = (e?: Error, result?: any) => void;
 
 /**
-* 生成一个异步信号
-* 
-* const signal = asyncSignal()
-* const signal = asyncSignal(()=>x==1,{timeout:10})
-* 
-* await  signal(timeout)
-* signal.resolve()
-* signal.reject()
-* signal.destroy()
-*
-* @param {function} constraint
-*      当调用signal.resolve()时，还需要满足额外的约束条件，仅当constraint返回true，则signal才可以进行真正resolve
-* @returns {function}
-*/
+ * 生成一个异步信号
+ *
+ * const signal = asyncSignal()
+ * const signal = asyncSignal(()=>x==1,{timeout:10})
+ *
+ * await  signal(timeout)
+ * signal.resolve()
+ * signal.reject()
+ * signal.destroy()
+ *
+ * @param {function} constraint
+ *      当调用signal.resolve()时，还需要满足额外的约束条件，仅当constraint返回true，则signal才可以进行真正resolve
+ * @returns {function}
+ */
 
-export function asyncSignal(constraint?:()=>boolean,options?:AsyncSignalOptions) : IAsyncSignal {     
-    const opts = Object.assign({
-        autoReset:false,
-        timeout:0
-    },options)
-    let isResolved:boolean = false,isRejected:boolean = false,isPending:boolean = false
-    let resolveSignal:Function, rejectSignal:Function, timeoutId:any = 0
-    let objPromise:Promise<any> | null
-    let signalId = ++AsyncSignalId
+export function asyncSignal(
+  constraint?: () => boolean,
+  options?: AsyncSignalOptions
+): IAsyncSignal {
+  const opts = Object.assign(
+    {
+      autoReset: false,
+      timeout: 0,
+    },
+    options
+  );
+  let isResolved: boolean = false,
+    isRejected: boolean = false,
+    isPending: boolean = false;
+  let resolveSignal: Function,
+    rejectSignal: Function,
+    timeoutId: any = 0;
+  let objPromise: Promise<any> | null;
+  let signalId = ++AsyncSignalId;
+  const listeners: AsyncSignalListener[] = [];
+  const onceListeners: AsyncSignalListener[] = [];
 
-    // 重置信号，可以再次复用
-    const reset = function () {
-        clearTimeout(timeoutId)
-        isResolved = false
-        isRejected = false
-        isPending = false
-        objPromise = new Promise((resolve, reject) => {
-            resolveSignal = resolve
-            rejectSignal = reject
-        })
-    }
-    
-    reset()
+  // 重置信号，可以再次复用
+  const reset = function () {
+    clearTimeout(timeoutId);
+    isResolved = false;
+    isRejected = false;
+    isPending = false;
+    onceListeners.splice(0, onceListeners.length);
+    objPromise = new Promise((resolve, reject) => {
+      resolveSignal = resolve;
+      rejectSignal = reject;
+    });
+  };
 
-   async function signal(timeout:number = opts.timeout, returns?:any){
-        // 如果constraint返回的true，代表不需要等待
-        if (typeof (constraint) === "function" && constraint()) {
-            isResolved = true
-            return
-        }
+  reset();
 
-        // 如果信号上次已经完成了，则需要重置信号
-        if (opts.autoReset && (isResolved || isRejected)) reset()
-
-        // 指定超时功能
-        if (timeout > 0) {
-            timeoutId = setTimeout(() => {
-                isResolved = true
-                try {
-                    if (returns instanceof Error) {
-                        rejectSignal(returns)
-                    } else {
-                        resolveSignal(returns)
-                    }
-                } catch {
-                }
-            }, timeout)
-        }
-        isPending = true
-        return objPromise
-    }
-    signal.id = signalId
-    signal.resolve = (result?:any) => {        
-        clearTimeout(timeoutId)
-        if(!isPending) return 
-        if (isResolved || isRejected) return
-        // 注意：是否真正resolve还受约束条件的约束，只有满足约束条件时才会真正resolve
-        if (typeof (constraint) === "function") {
-            if(constraint()){
-                resolveSignal(result)
-            }else{
-               // 如果不满足约束条件，则静默返回，可以通过signal.isFulfilled()来判断是否完成
-               return    
-            }
-        } else {
-            resolveSignal(result)
-        }
-        isResolved = true
-    } 
-
-    signal.reject = (e?:Error | string) => {        
-        clearTimeout(timeoutId)
-        if(!isPending) return 
-        if (isResolved || isRejected) return
-        rejectSignal(typeof(e)==='string' ? new Error(e) : ((e instanceof Error) ? e : new Error()))
-        isRejected = true
+  async function signal(timeout: number = opts.timeout, returns?: any) {
+    // 如果constraint返回的true，代表不需要等待
+    if (typeof constraint === "function" && constraint()) {
+      isResolved = true;
+      return;
     }
 
-    // 信号被销毁时，产生一个中止错误，信号的使用者可以据此进行善后处理
-    signal.destroy = () => {
-       clearTimeout(timeoutId)
-       if(isPending) rejectSignal(new AsyncSignalAbort())   
-       isResolved =false
-       isPending = false         
-       isRejected =false
-       objPromise = null
-    }
+    // 如果信号上次已经完成了，则需要重置信号
+    if (opts.autoReset && (isResolved || isRejected)) reset();
 
-    signal.reset = reset
-    signal.isResolved = () => isResolved
-    signal.isRejected = () => isRejected 
-    signal.isPending = () => isPending 
-    return signal as unknown as IAsyncSignal
+    // 指定超时功能
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        isResolved = true;
+        try {
+          if (returns instanceof Error) {
+            rejectSignal(returns);
+          } else {
+            resolveSignal(returns);
+          }
+        } catch {}
+      }, timeout);
+    }
+    isPending = true;
+    return objPromise;
+  }
+  signal.id = signalId;
+
+  const executeListeners = (e?: Error, result?: any) => {
+    try {
+      listeners.forEach((listener) => {
+        listener(e, result);
+      });
+      onceListeners.forEach((listener) => {
+        listener(e, result);
+      });
+      onceListeners.splice(0, onceListeners.length);
+    } catch {}
+  };
+
+  signal.resolve = (result?: any) => {
+    clearTimeout(timeoutId);
+    if (!isPending) return;
+    if (isResolved || isRejected) return;
+    // 注意：是否真正resolve还受约束条件的约束，只有满足约束条件时才会真正resolve
+    if (typeof constraint === "function") {
+      if (constraint()) {
+        executeListeners(undefined, result);
+        resolveSignal(result);
+      } else {
+        // 如果不满足约束条件，则静默返回，可以通过signal.isFulfilled()来判断是否完成
+        return;
+      }
+    } else {
+      executeListeners(undefined, result);
+      resolveSignal(result);
+    }
+    isResolved = true;
+  };
+
+  signal.reject = (e?: Error | string) => {
+    clearTimeout(timeoutId);
+    if (!isPending) return;
+    if (isResolved || isRejected) return;
+    const err =
+      typeof e === "string"
+        ? new Error(e)
+        : e instanceof Error
+        ? e
+        : new Error();
+    executeListeners(err);
+    rejectSignal(err);
+    isRejected = true;
+  };
+
+  // 信号被销毁时，产生一个中止错误，信号的使用者可以据此进行善后处理
+  signal.destroy = () => {
+    clearTimeout(timeoutId);
+    if (isPending) rejectSignal(new AsyncSignalAbort());
+    listeners.splice(0, listeners.length);
+    onceListeners.splice(0, onceListeners.length);
+    isResolved = false;
+    isPending = false;
+    isRejected = false;
+    objPromise = null;
+  };
+
+  signal.reset = reset;
+  signal.isResolved = () => isResolved;
+  signal.isRejected = () => isRejected;
+  signal.isPending = () => isPending;
+  signal.on = (listener: (e?: Error) => void) => {
+    listeners.push(listener);
+  };
+  signal.once = (listener: (e?: Error) => void) => {
+    onceListeners.push(listener);
+  };
+  signal.off = (listener: (e?: Error) => void) => {
+    let i = listeners.indexOf(listener);
+    if (i > -1) listeners.splice(i, 1);
+    i = onceListeners.indexOf(listener);
+    if (i > -1) listeners.splice(i, 1);
+  };
+  return signal as unknown as IAsyncSignal;
 }
 
 /**
@@ -179,58 +230,65 @@ export function asyncSignal(constraint?:()=>boolean,options?:AsyncSignalOptions)
  *
  *
  */
- 
 
 export class AsyncSignalManager {
-   #_signals:Record<string,IAsyncSignal> = {}
-   constructor(public options?:{timeout: number} ) {
-        this.options = Object.assign({
-            timeout:0,// 为所有异步信号提供一个默认的超时时间，当信号超时未resolve时，会自动进行reject(timeout)
-        },options)
+  #_signals: Record<string, IAsyncSignal> = {};
+  constructor(public options?: { timeout: number }) {
+    this.options = Object.assign(
+      {
+        timeout: 0, // 为所有异步信号提供一个默认的超时时间，当信号超时未resolve时，会自动进行reject(timeout)
+      },
+      options
+    );
+  }
+  get signals(): Record<string, IAsyncSignal> {
+    return this.#_signals;
+  }
+
+  /**
+   * 创建新的异步信号
+   * @param constraint         额外的约束条件
+   * @param id
+   */
+  create(constraint?: () => boolean) {
+    let signal = asyncSignal(constraint, this.options);
+    this.#_signals[signal.id] = signal;
+    return signal;
+  }
+
+  /**
+   * 销毁指定的或者所有异步信号
+   *
+   *  destroy(id)
+   *  destroy([id,id,...])
+   *  destroy()                   // 销毁所有
+   * @param {string} id           可选的信号id,如果未指定则删除所有的信号
+   *
+   */
+
+  destroy(id: number | number[] | undefined) {
+    let ids = Array.isArray(id)
+      ? id
+      : id === undefined
+      ? Object.keys(this.#_signals)
+      : [id];
+    for (let id of ids) {
+      if (id in this.#_signals) {
+        try {
+          this.#_signals[id].destroy();
+          delete this.#_signals[id];
+        } catch (e) {}
+      }
     }
-    get signals():Record<string,IAsyncSignal> {return this.#_signals} 
-
-    /**
-     * 创建新的异步信号
-     * @param constraint         额外的约束条件
-     * @param id
-     */
-    create(constraint?:()=>boolean){
-        let signal = asyncSignal(constraint,this.options)
-        this.#_signals[signal.id] = signal
-        return signal
-    }
-
-    /**
-     * 销毁指定的或者所有异步信号
-     *
-     *  destroy(id)
-     *  destroy([id,id,...])
-     *  destroy()                   // 销毁所有
-     * @param {string} id           可选的信号id,如果未指定则删除所有的信号
-     *
-     */ 
-     
-   destroy(id:number | number[] | undefined) {
-        let ids = Array.isArray(id) ? id : (id===undefined ? Object.keys(this.#_signals) : [id])
-        for(let id of ids){
-            if(id in this.#_signals){
-                try{
-                    this.#_signals[id].destroy()
-                    delete this.#_signals[id]
-                }catch (e) { }
-            }
-        }
-   }
-   resolve(){
-        let args = arguments
-        Object.values(this.#_signals).forEach(signal=>signal.resolve(args))
-   }
-   reject(e:Error | string){
-        Object.values(this.#_signals).forEach(signal=>signal.reject(e))
-   }
-   reset(){
-        Object.values(this.#_signals).forEach(signal=>signal.reset())
-   }
-} 
-
+  }
+  resolve() {
+    let args = arguments;
+    Object.values(this.#_signals).forEach((signal) => signal.resolve(args));
+  }
+  reject(e: Error | string) {
+    Object.values(this.#_signals).forEach((signal) => signal.reject(e));
+  }
+  reset() {
+    Object.values(this.#_signals).forEach((signal) => signal.reset());
+  }
+}
