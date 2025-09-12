@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.4
+
+### Patch Changes
+
+- e2d7ba9: feat: add simple event emitter
+
 ## 0.0.3
 
 ### Patch Changes
