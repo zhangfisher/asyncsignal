@@ -122,8 +122,10 @@ export function asyncSignal(
         isResolved = true;
         try {
           if (returns instanceof Error) {
+            executeListeners(returns);
             rejectSignal(returns);
           } else {
+            executeListeners(undefined, returns);
             resolveSignal(returns);
           }
         } catch {}
