@@ -40,8 +40,14 @@ export interface IAsyncSignal {
    isResolved()   : boolean
    isRejected()   : boolean
    isPending():boolean
+   abort():void
 }
 
+
+export type AsyncSignalOptions = {
+    timeout?:number
+    autoReset?:boolean
+}
 
 let AsyncSignalId = 0
 
@@ -61,7 +67,11 @@ let AsyncSignalId = 0
 * @returns {function}
 */
 
-export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={timeout:0}) : IAsyncSignal {     
+export function asyncSignal(constraint?:()=>boolean,options?:AsyncSignalOptions) : IAsyncSignal {     
+    const{ timeout,autoReset} = Object.assign({
+        timeout:0,
+        autoReset:false
+    },options)
     let isResolved:boolean = false,isRejected:boolean = false,isPending:boolean = false
     let resolveSignal:Function, rejectSignal:Function, timeoutId:any = 0
     let objPromise:Promise<any> | null
@@ -81,7 +91,7 @@ export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={ti
     
     reset()
 
-   async function signal(timeout:number = options.timeout, returns?:any){
+   async function signal(timeout:number = 0, returns?:any){
         // 如果constraint返回的true，代表不需要等待
         if (typeof (constraint) === "function" && constraint()) {
             isResolved = true
@@ -89,8 +99,14 @@ export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={ti
         }
 
         // 如果信号上次已经完成了，则需要重置信号
-        if (isResolved || isRejected) reset()
-
+        if ((isResolved || isRejected)) {
+            if(autoReset){
+                reset()                                
+            }else{
+                return objPromise
+            }
+        }
+        isPending = true
         // 指定超时功能
         if (timeout > 0) {
             timeoutId = setTimeout(() => {
@@ -105,7 +121,6 @@ export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={ti
                 }
             }, timeout)
         }
-        isPending = true
         return objPromise
     }
     signal.id = signalId
@@ -149,6 +164,7 @@ export function asyncSignal(constraint?:()=>boolean,options:{timeout:number}={ti
     signal.isResolved = () => isResolved
     signal.isRejected = () => isRejected 
     signal.isPending = () => isPending 
+
     return signal as unknown as IAsyncSignal
 }
 
