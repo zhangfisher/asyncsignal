@@ -1,6 +1,6 @@
 {
   "name": "asyncsignal",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "description": "Reusable asynchronous signals,it's a like promisewithResolvers",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsup",
     "changeset": "changeset",
-    "release": "changeset version && changeset publish"
+    "release": "bun run build && bun run changeset version && bun run changeset publish"
   },
   "keywords": [
     "promise.withResolvers",
