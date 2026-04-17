@@ -27,10 +27,14 @@
   "author": "wxzhang@126.com",
   "license": "MIT",
   "devDependencies": {
-    "@changesets/cli": "^2.27.11",
+    "@changesets/cli": "^2.30.0",
+    "@types/bun": "^1.3.12",
     "@types/node": "^22.10.3",
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0",
+    "oxlint-tsgolint": "^0.21.1",
     "ts-node": "^10.9.2",
     "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
+    "typescript": "^6.0.3"
   }
 }
