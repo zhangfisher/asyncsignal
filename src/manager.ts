@@ -22,12 +22,17 @@ import { asyncSignal } from "./asyncSignal";
 
 export class AsyncSignalManager {
     #_signals: Record<string, IAsyncSignal> = {};
-    constructor(public options?: { timeout: number; }) {
-        this.options = Object.assign({
-            timeout: 0, // 为所有异步信号提供一个默认的超时时间，当信号超时未resolve时，会自动进行reject(timeout)
-        }, options);
+    constructor(public options?: { timeout: number }) {
+        this.options = Object.assign(
+            {
+                timeout: 0, // 为所有异步信号提供一个默认的超时时间，当信号超时未resolve时，会自动进行reject(timeout)
+            },
+            options,
+        );
     }
-    get signals(): Record<string, IAsyncSignal> { return this.#_signals; }
+    get signals(): Record<string, IAsyncSignal> {
+        return this.#_signals;
+    }
 
     /**
      * 创建新的异步信号
@@ -35,7 +40,7 @@ export class AsyncSignalManager {
      * @param id
      */
     create(constraint?: () => boolean) {
-        let signal = asyncSignal(constraint, this.options);
+        let signal = asyncSignal({ ...this.options, constraint });
         this.#_signals[signal.id] = signal;
         return signal;
     }
@@ -50,24 +55,27 @@ export class AsyncSignalManager {
      *
      */
     destroy(id?: number | number[] | undefined) {
-        let ids = Array.isArray(id) ? id : (id === undefined ? Object.keys(this.#_signals) : [id]);
+        let ids = Array.isArray(id) ? id : id === undefined ? Object.keys(this.#_signals) : [id];
         for (let id of ids) {
             if (id in this.#_signals) {
                 try {
                     this.#_signals[id].destroy();
                     delete this.#_signals[id];
-                } catch (e) { }
+                } catch (e) {}
             }
         }
     }
     resolve() {
         let args = arguments;
-        Object.values(this.#_signals).forEach(signal => signal.resolve(args));
+        Object.values(this.#_signals).forEach((signal) => signal.resolve(args));
     }
     reject(e?: Error | string) {
-        Object.values(this.#_signals).forEach(signal => signal.reject(e));
+        Object.values(this.#_signals).forEach((signal) => signal.reject(e));
     }
     reset() {
-        Object.values(this.#_signals).forEach(signal => signal.reset());
+        Object.values(this.#_signals).forEach((signal) => signal.reset());
+    }
+    abort() {
+        Object.values(this.#_signals).forEach((signal) => signal.abort());
     }
 }

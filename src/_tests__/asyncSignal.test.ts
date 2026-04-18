@@ -217,7 +217,7 @@ describe("asyncSignal 基本功能测试", () => {
 
         test("带约束条件的resolve也应该调用abortController.abort()", async () => {
             let condition = false;
-            const signal = asyncSignal(() => condition);
+            const signal = asyncSignal({ constraint: () => condition });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;

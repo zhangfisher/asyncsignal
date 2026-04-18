@@ -4,7 +4,7 @@ import { asyncSignal } from "../asyncSignal";
 describe("asyncSignal abortBehavior 选项测试", () => {
     describe("默认行为 (abortBehavior: 'all')", () => {
         test("resolve时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'all' });
+            const signal = asyncSignal({ abortAt: 'all' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -22,7 +22,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reject时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'all' });
+            const signal = asyncSignal({ abortAt: 'all' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -44,7 +44,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reset时应该调用abortController.abort()", () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'all' });
+            const signal = asyncSignal({ abortAt: 'all' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -62,7 +62,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
 
     describe("abortBehavior: 'reject'", () => {
         test("resolve时不应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+            const signal = asyncSignal({ abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -80,7 +80,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reject时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+            const signal = asyncSignal({ abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -102,7 +102,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reset时不应该调用abortController.abort()", () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+            const signal = asyncSignal({ abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -120,7 +120,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
 
     describe("abortBehavior: 'resolve'", () => {
         test("resolve时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+            const signal = asyncSignal({ abortAt: 'resolve' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -138,7 +138,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reject时不应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+            const signal = asyncSignal({ abortAt: 'resolve' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -160,7 +160,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reset时不应该调用abortController.abort()", () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+            const signal = asyncSignal({ abortAt: 'resolve' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -178,7 +178,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
 
     describe("abortBehavior: 'none'", () => {
         test("resolve时不应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'none' });
+            const signal = asyncSignal({ abortAt: 'none' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -196,7 +196,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reject时不应该调用abortController.abort()", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'none' });
+            const signal = asyncSignal({ abortAt: 'none' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -218,7 +218,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("reset时不应该调用abortController.abort()", () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'none' });
+            const signal = asyncSignal({ abortAt: 'none' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -237,7 +237,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
     describe("abortBehavior 与其他功能的集成", () => {
         test("abortBehavior: 'reject' 与约束条件一起使用", async () => {
             let condition = false;
-            const signal = asyncSignal(() => condition, { abortBehavior: 'reject' });
+            const signal = asyncSignal({ constraint: () => condition, abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;
@@ -261,7 +261,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
         });
 
         test("abortBehavior: 'resolve' 与自动重置一起使用", async () => {
-            const signal = asyncSignal(undefined, { abortBehavior: 'resolve', autoReset: true });
+            const signal = asyncSignal({ abortAt: 'resolve', autoReset: true });
 
             // 第一次使用
             const abortSignal1 = signal.getAbortSignal();
@@ -302,7 +302,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
 
             for (const behavior of testBehaviors) {
                 // 测试 destroy
-                const signal1 = asyncSignal(undefined, { abortBehavior: behavior });
+                const signal1 = asyncSignal({ abortAt: behavior });
                 const abortSignal1 = signal1.getAbortSignal();
 
                 let aborted1 = false;
@@ -324,7 +324,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
                 expect(abortSignal1?.aborted).toBeTrue();
 
                 // 测试 abort
-                const signal2 = asyncSignal(undefined, { abortBehavior: behavior });
+                const signal2 = asyncSignal({ abortAt: behavior });
                 const abortSignal2 = signal2.getAbortSignal();
 
                 let aborted2 = false;
@@ -351,7 +351,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
     describe("实际使用场景", () => {
         test("仅在错误时中止网络请求", async () => {
             // 模拟只在错误时需要中止网络请求的场景
-            const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+            const signal = asyncSignal({ abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let requestAborted = false;
@@ -379,7 +379,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
 
         test("成功时清理资源但失败时保留", async () => {
             // 模拟只在成功时需要清理资源的场景
-            const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+            const signal = asyncSignal({ abortAt: 'resolve' });
             const abortSignal = signal.getAbortSignal();
 
             let resourceCleaned = false;

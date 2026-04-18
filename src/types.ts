@@ -19,10 +19,10 @@ export interface IAsyncSignal {
  * - 'resolve': 仅在resolve时abort abortController
  * - 'none': 从不自动abort abortController
  */
-export type AbortBehavior = 'all' | 'reject' | 'resolve' | 'none';
+export type AbortBehavior = "all" | "reject" | "resolve" | "none";
 
 export type AsyncSignalOptions = {
-    timeout?: number;
     autoReset?: boolean;
-    abortBehavior?: AbortBehavior;
+    abortAt?: AbortBehavior;
+    constraint?: () => boolean;
 };

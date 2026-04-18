@@ -87,7 +87,7 @@ await signal();        // 可以再次使用
 
 ```typescript
 let ready = false;
-const signal = asyncSignal(() => ready);
+const signal = asyncSignal({ constraint: () => ready });
 
 // 在 ready 为 true 之前不会 resolve
 signal.resolve(); // 会被约束条件阻塞
@@ -109,34 +109,34 @@ signal1.reset();        // 必须手动重置才能复用
 await signal1();        // 现在可以再次使用
 
 // 启用自动重置
-const signal2 = asyncSignal(undefined, { autoReset: true });
+const signal2 = asyncSignal({ autoReset: true });
 await signal2();        // 完成后自动重置
 await signal2();        // 无需手动重置即可再次使用
 ```
 
 ### 中止行为控制
 
-使用 `abortBehavior` 选项控制何时中止 `AbortController`：
+使用 `abortAt` 选项控制何时中止 `AbortController`：
 
 ```typescript
 // 默认：在 resolve、reject 和 reset 时都中止
-const signal1 = asyncSignal(undefined, { abortBehavior: 'all' });
+const signal1 = asyncSignal({ abortAt: 'all' });
 
 // 仅在 reject 时中止（适用于网络请求）
-const signal2 = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal2 = asyncSignal({ abortAt: 'reject' });
 
 // 仅在 resolve 时中止（适用于资源清理）
-const signal3 = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const signal3 = asyncSignal({ abortAt: 'resolve' });
 
 // 从不自动中止（手动控制）
-const signal4 = asyncSignal(undefined, { abortBehavior: 'none' });
+const signal4 = asyncSignal({ abortAt: 'none' });
 ```
 
 #### 使用场景
 
 **网络请求取消（仅在错误时中止）：**
 ```typescript
-const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal = asyncSignal({ abortAt: 'reject' });
 const abortSignal = signal.getAbortSignal();
 
 async function fetchData() {
@@ -156,7 +156,7 @@ async function fetchData() {
 
 **资源清理（仅在成功时中止）：**
 ```typescript
-const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const signal = asyncSignal({ abortAt: 'resolve' });
 const abortSignal = signal.getAbortSignal();
 
 abortSignal.addEventListener('abort', () => {
@@ -277,14 +277,14 @@ function processTasks(tasks: any[]) {
 ```typescript
 function waitForCondition(condition: () => boolean, timeout = 5000) {
   // 启用 autoReset 以进行多次条件检查
-  const signal = asyncSignal(condition, { timeout, autoReset: true });
-  
+  const signal = asyncSignal({ constraint: condition, timeout, autoReset: true });
+
   const interval = setInterval(() => {
     if (signal.resolve()) {
       clearInterval(interval);
     }
   }, 100);
-  
+
   return signal(timeout, new Error('Condition not met'));
 }
 ```
@@ -295,17 +295,16 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 
 ```typescript
 function asyncSignal(
-  constraint?: () => boolean,
   options?: AsyncSignalOptions
 ): IAsyncSignal
 ```
 
 **参数：**
-- `constraint` - 可选函数，必须返回 true 才能 resolve 成功
 - `options` - 配置选项
+  - `constraint` - 可选函数，必须返回 true 才能 resolve 成功
   - `timeout` - 默认超时时间（毫秒）（默认：0）
   - `autoReset` - 完成后自动重置信号（默认：false）
-  - `abortBehavior` - 控制何时中止 AbortController（默认：'all'）
+  - `abortAt` - 控制何时中止 AbortController（默认：'all'）
     - `'all'` - 在 resolve、reject 和 reset 时都中止
     - `'reject'` - 仅在 reject 时中止
     - `'resolve'` - 仅在 resolve 时中止

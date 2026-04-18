@@ -87,7 +87,7 @@ Add conditions that must be met before a signal can resolve:
 
 ```typescript
 let ready = false;
-const signal = asyncSignal(() => ready);
+const signal = asyncSignal({ constraint: () => ready });
 
 // This won't resolve until ready is true
 signal.resolve(); // Will be blocked by constraint
@@ -109,34 +109,34 @@ signal1.reset();        // Must manually reset to reuse
 await signal1();        // Now can be used again
 
 // With autoReset enabled
-const signal2 = asyncSignal(undefined, { autoReset: true });
+const signal2 = asyncSignal({ autoReset: true });
 await signal2();        // Auto-resets after completion
 await signal2();        // Can be used again without manual reset
 ```
 
 ### Abort Behavior Control
 
-Control when the AbortController should be aborted using the `abortBehavior` option:
+Control when the AbortController should be aborted using the `abortAt` option:
 
 ```typescript
 // Default: abort on resolve, reject, and reset
-const signal1 = asyncSignal(undefined, { abortBehavior: 'all' });
+const signal1 = asyncSignal({ abortAt: 'all' });
 
 // Only abort on reject (useful for network requests)
-const signal2 = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal2 = asyncSignal({ abortAt: 'reject' });
 
 // Only abort on resolve (useful for resource cleanup)
-const signal3 = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const signal3 = asyncSignal({ abortAt: 'resolve' });
 
 // Never auto-abort (manual control)
-const signal4 = asyncSignal(undefined, { abortBehavior: 'none' });
+const signal4 = asyncSignal({ abortAt: 'none' });
 ```
 
 #### Use Cases
 
 **Network Request Cancellation (abort only on errors):**
 ```typescript
-const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal = asyncSignal({ abortAt: 'reject' });
 const abortSignal = signal.getAbortSignal();
 
 async function fetchData() {
@@ -156,7 +156,7 @@ async function fetchData() {
 
 **Resource Cleanup (abort only on success):**
 ```typescript
-const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const signal = asyncSignal({ abortAt: 'resolve' });
 const abortSignal = signal.getAbortSignal();
 
 abortSignal.addEventListener('abort', () => {
@@ -277,14 +277,14 @@ function processTasks(tasks: any[]) {
 ```typescript
 function waitForCondition(condition: () => boolean, timeout = 5000) {
   // Enable autoReset for multiple condition checks
-  const signal = asyncSignal(condition, { timeout, autoReset: true });
-  
+  const signal = asyncSignal({ constraint: condition, timeout, autoReset: true });
+
   const interval = setInterval(() => {
     if (signal.resolve()) {
       clearInterval(interval);
     }
   }, 100);
-  
+
   return signal(timeout, new Error('Condition not met'));
 }
 ```
@@ -295,17 +295,16 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 
 ```typescript
 function asyncSignal(
-  constraint?: () => boolean,
   options?: AsyncSignalOptions
 ): IAsyncSignal
 ```
 
 **Parameters:**
-- `constraint` - Optional function that must return true for resolve to succeed
 - `options` - Configuration options
+  - `constraint` - Optional function that must return true for resolve to succeed
   - `timeout` - Default timeout in milliseconds (default: 0)
   - `autoReset` - Automatically reset signal after completion (default: false)
-  - `abortBehavior` - Control when to abort AbortController (default: 'all')
+  - `abortAt` - Control when to abort AbortController (default: 'all')
     - `'all'` - Abort on resolve, reject, and reset
     - `'reject'` - Only abort on reject
     - `'resolve'` - Only abort on resolve

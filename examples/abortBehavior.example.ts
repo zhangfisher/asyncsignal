@@ -9,7 +9,7 @@ import { asyncSignal } from "../src/asyncSignal";
 // 示例 1: 默认行为 (abortBehavior: 'all')
 // 在 resolve、reject、reset 时都会 abort
 console.log("示例 1: 默认行为");
-const signal1 = asyncSignal(undefined, { abortBehavior: 'all' });
+const signal1 = asyncSignal({ abortAt: 'all' });
 const abortSignal1 = signal1.getAbortSignal();
 
 abortSignal1?.addEventListener("abort", () => {
@@ -23,7 +23,7 @@ console.log("");
 // 示例 2: 仅在错误时中止 (abortBehavior: 'reject')
 // 适用于只在错误时需要取消网络请求的场景
 console.log("示例 2: 仅在错误时中止");
-const signal2 = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal2 = asyncSignal({ abortAt: 'reject' });
 const abortSignal2 = signal2.getAbortSignal();
 
 abortSignal2?.addEventListener("abort", () => {
@@ -36,7 +36,7 @@ signal2.resolve("成功");
 console.log("成功完成，没有中止 AbortController");
 
 // 失败情况 - 会 abort
-const signal2b = asyncSignal(undefined, { abortBehavior: 'reject' });
+const signal2b = asyncSignal({ abortAt: 'reject' });
 const abortSignal2b = signal2b.getAbortSignal();
 
 abortSignal2b?.addEventListener("abort", () => {
@@ -57,7 +57,7 @@ console.log("");
 // 示例 3: 仅在成功时中止 (abortBehavior: 'resolve')
 // 适用于只在成功时需要清理资源的场景
 console.log("示例 3: 仅在成功时中止");
-const signal3 = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const signal3 = asyncSignal({ abortAt: 'resolve' });
 const abortSignal3 = signal3.getAbortSignal();
 
 abortSignal3?.addEventListener("abort", () => {
@@ -71,7 +71,7 @@ console.log("");
 // 示例 4: 从不自动中止 (abortBehavior: 'none')
 // 适用于需要手动控制中止时机的场景
 console.log("示例 4: 从不自动中止");
-const signal4 = asyncSignal(undefined, { abortBehavior: 'none' });
+const signal4 = asyncSignal({ abortAt: 'none' });
 const abortSignal4 = signal4.getAbortSignal();
 
 abortSignal4?.addEventListener("abort", () => {
@@ -83,7 +83,7 @@ signal4.resolve("成功");
 console.log("完成，但 AbortController 没有被自动中止");
 
 // 可以手动 abort
-const signal4b = asyncSignal(undefined, { abortBehavior: 'none' });
+const signal4b = asyncSignal({ abortAt: 'none' });
 const abortSignal4b = signal4b.getAbortSignal();
 abortSignal4b?.addEventListener("abort", () => {
     console.log("✓ 手动中止了 AbortController");
@@ -102,7 +102,7 @@ console.log("");
 // 实际应用场景: 网络请求取消
 console.log("实际应用: 网络请求取消");
 async function fetchWithTimeout(url: string, timeout: number) {
-    const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+    const signal = asyncSignal({ abortAt: 'reject' });
     const abortSignal = signal.getAbortSignal();
 
     try {
