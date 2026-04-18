@@ -11,6 +11,7 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 - **Constraint Functions**: Add conditional logic to control when signals can resolve
 - **Signal Management**: Batch manage multiple signals with AsyncSignalManager
 - **Abort Support**: Native integration with AbortController for cancellation
+- **Abort Behavior Control**: Fine-grained control over when to abort AbortController
 - **Auto Reset**: Optional automatic signal reset (default: manual reset required)
 
 ## Installation
@@ -111,6 +112,58 @@ await signal1();        // Now can be used again
 const signal2 = asyncSignal(undefined, { autoReset: true });
 await signal2();        // Auto-resets after completion
 await signal2();        // Can be used again without manual reset
+```
+
+### Abort Behavior Control
+
+Control when the AbortController should be aborted using the `abortBehavior` option:
+
+```typescript
+// Default: abort on resolve, reject, and reset
+const signal1 = asyncSignal(undefined, { abortBehavior: 'all' });
+
+// Only abort on reject (useful for network requests)
+const signal2 = asyncSignal(undefined, { abortBehavior: 'reject' });
+
+// Only abort on resolve (useful for resource cleanup)
+const signal3 = asyncSignal(undefined, { abortBehavior: 'resolve' });
+
+// Never auto-abort (manual control)
+const signal4 = asyncSignal(undefined, { abortBehavior: 'none' });
+```
+
+#### Use Cases
+
+**Network Request Cancellation (abort only on errors):**
+```typescript
+const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+const abortSignal = signal.getAbortSignal();
+
+async function fetchData() {
+  try {
+    const response = await fetch('/api/data', { signal: abortSignal! });
+    signal.resolve('Success');
+    return response;
+  } catch (error) {
+    signal.reject(error);
+    throw error;
+  }
+}
+
+// On success: fetch completes, no abort
+// On error: both signal and fetch request are aborted
+```
+
+**Resource Cleanup (abort only on success):**
+```typescript
+const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const abortSignal = signal.getAbortSignal();
+
+abortSignal.addEventListener('abort', () => {
+  cleanupTemporaryFiles();
+});
+
+// Signal will abort and cleanup on success, but not on failure
 ```
 
 ### Abort Integration
@@ -252,6 +305,11 @@ function asyncSignal(
 - `options` - Configuration options
   - `timeout` - Default timeout in milliseconds (default: 0)
   - `autoReset` - Automatically reset signal after completion (default: false)
+  - `abortBehavior` - Control when to abort AbortController (default: 'all')
+    - `'all'` - Abort on resolve, reject, and reset
+    - `'reject'` - Only abort on reject
+    - `'resolve'` - Only abort on resolve
+    - `'none'` - Never auto-abort
 
 **Returns:** `IAsyncSignal` - Signal object with methods and properties
 

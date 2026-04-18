@@ -11,6 +11,7 @@
 - **约束函数**：添加条件逻辑来控制信号何时可以 resolve
 - **信号管理**：使用 AsyncSignalManager 批量管理多个信号
 - **中止支持**：与 AbortController 原生集成，支持取消操作
+- **中止行为控制**：精确控制何时中止 AbortController
 - **自动重置**：可选的信号自动重置功能（默认：需要手动重置）
 
 ## 安装
@@ -111,6 +112,58 @@ await signal1();        // 现在可以再次使用
 const signal2 = asyncSignal(undefined, { autoReset: true });
 await signal2();        // 完成后自动重置
 await signal2();        // 无需手动重置即可再次使用
+```
+
+### 中止行为控制
+
+使用 `abortBehavior` 选项控制何时中止 `AbortController`：
+
+```typescript
+// 默认：在 resolve、reject 和 reset 时都中止
+const signal1 = asyncSignal(undefined, { abortBehavior: 'all' });
+
+// 仅在 reject 时中止（适用于网络请求）
+const signal2 = asyncSignal(undefined, { abortBehavior: 'reject' });
+
+// 仅在 resolve 时中止（适用于资源清理）
+const signal3 = asyncSignal(undefined, { abortBehavior: 'resolve' });
+
+// 从不自动中止（手动控制）
+const signal4 = asyncSignal(undefined, { abortBehavior: 'none' });
+```
+
+#### 使用场景
+
+**网络请求取消（仅在错误时中止）：**
+```typescript
+const signal = asyncSignal(undefined, { abortBehavior: 'reject' });
+const abortSignal = signal.getAbortSignal();
+
+async function fetchData() {
+  try {
+    const response = await fetch('/api/data', { signal: abortSignal! });
+    signal.resolve('成功');
+    return response;
+  } catch (error) {
+    signal.reject(error);
+    throw error;
+  }
+}
+
+// 成功时：fetch 完成，不中止
+// 失败时：同时中止信号和 fetch 请求
+```
+
+**资源清理（仅在成功时中止）：**
+```typescript
+const signal = asyncSignal(undefined, { abortBehavior: 'resolve' });
+const abortSignal = signal.getAbortSignal();
+
+abortSignal.addEventListener('abort', () => {
+  清理临时文件();
+});
+
+// 信号在成功时会中止并清理，但失败时不会
 ```
 
 ### Abort 集成
@@ -252,6 +305,11 @@ function asyncSignal(
 - `options` - 配置选项
   - `timeout` - 默认超时时间（毫秒）（默认：0）
   - `autoReset` - 完成后自动重置信号（默认：false）
+  - `abortBehavior` - 控制何时中止 AbortController（默认：'all'）
+    - `'all'` - 在 resolve、reject 和 reset 时都中止
+    - `'reject'` - 仅在 reject 时中止
+    - `'resolve'` - 仅在 resolve 时中止
+    - `'none'` - 从不自动中止
 
 **返回：** `IAsyncSignal` - 包含方法和属性的信号对象
 
@@ -274,6 +332,7 @@ interface IAsyncSignal {
 ```
 
 **方法说明：**
+
 - `signal(timeout?, returns?)` - 等待信号 resolve 或 reject
 - `id` - 信号的唯一标识符
 - `reset()` - 重置信号以便复用
