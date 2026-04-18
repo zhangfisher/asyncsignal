@@ -1,5 +1,12 @@
 # asyncsignal
 
+## 0.0.6
+
+### Patch Changes
+
+- b501033: 增加 abortController 功能
+- db39592: add abortBehavior option
+
 ## 0.0.5
 
 ### Patch Changes
