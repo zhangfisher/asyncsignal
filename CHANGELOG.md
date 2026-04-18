@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.7
+
+### Patch Changes
+
+- 632ea6b: update options
+
 ## 0.0.6
 
 ### Patch Changes
