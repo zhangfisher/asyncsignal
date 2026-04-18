@@ -1,0 +1,5 @@
+---
+"asyncsignal": patch
+---
+
+update options
