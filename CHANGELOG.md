@@ -1,5 +1,13 @@
 # asyncsignal
 
+## 0.0.8
+
+### Patch Changes
+
+- a55b4f3: [feat] add signal result and error
+  [feat] 移除 AsyncSignalManager
+  [feat] 增加值类型
+
 ## 0.0.7
 
 ### Patch Changes
