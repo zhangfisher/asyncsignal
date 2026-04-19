@@ -237,7 +237,7 @@ describe("asyncSignal abortBehavior 选项测试", () => {
     describe("abortBehavior 与其他功能的集成", () => {
         test("abortBehavior: 'reject' 与约束条件一起使用", async () => {
             let condition = false;
-            const signal = asyncSignal({ constraint: () => condition, abortAt: 'reject' });
+            const signal = asyncSignal({ until: () => condition, abortAt: 'reject' });
             const abortSignal = signal.getAbortSignal();
 
             let aborted = false;

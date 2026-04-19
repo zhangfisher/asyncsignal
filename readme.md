@@ -9,7 +9,6 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 - **Signal Control**: Create reusable async signals that can be manually resolved or rejected
 - **Timeout Support**: Built-in timeout functionality for async operations
 - **Constraint Functions**: Add conditional logic to control when signals can resolve
-- **Signal Management**: Batch manage multiple signals with AsyncSignalManager
 - **Abort Support**: Native integration with AbortController for cancellation
 - **Abort Behavior Control**: Fine-grained control over when to abort AbortController
 - **Auto Reset**: Optional automatic signal reset (default: manual reset required)
@@ -29,7 +28,7 @@ yarn add asyncsignal
 ### Creating a Signal
 
 ```typescript
-import { asyncSignal } from 'asyncsignal';
+import { asyncSignal } from "asyncsignal";
 
 // Create a basic signal
 const signal = asyncSignal();
@@ -38,10 +37,10 @@ const signal = asyncSignal();
 await signal();
 
 // Resolve the signal
-signal.resolve('resolved value');
+signal.resolve("resolved value");
 
 // Or reject the signal
-signal.reject(new Error('rejected error'));
+signal.reject(new Error("rejected error"));
 ```
 
 ### Timeout Support
@@ -53,7 +52,7 @@ const signal = asyncSignal();
 await signal(100);
 
 // Wait with timeout and custom error
-await signal(100, new Error('Timeout error'));
+await signal(100, new Error("Timeout error"));
 ```
 
 ### Status Checking
@@ -61,9 +60,37 @@ await signal(100, new Error('Timeout error'));
 ```typescript
 const signal = asyncSignal();
 
-signal.isPending();    // true if waiting
-signal.isResolved();   // true if resolved
-signal.isRejected();   // true if rejected
+signal.isPending(); // true if waiting
+signal.isFulfilled(); // true if resolved
+signal.isRejected(); // true if rejected
+```
+
+### Result Access
+
+Signals provide direct access to their resolved values and rejected errors:
+
+```typescript
+const signal = asyncSignal<string>();
+
+// Resolve and access result
+signal.resolve("success");
+await signal();
+
+console.log(signal.result); // 'success'
+console.log(signal.error); // undefined
+
+// Reject and access error
+signal.reject(new Error("failed"));
+
+console.log(signal.result); // undefined
+console.log(signal.error); // Error: failed
+
+// Access without awaiting
+const signal2 = asyncSignal<number>();
+signal2.resolve(42);
+
+console.log(signal2.result); // 42 - immediately available
+console.log(signal2.error); // undefined
 ```
 
 ### Signal Reset
@@ -73,24 +100,24 @@ By default, signals need manual reset to be reused:
 ```typescript
 const signal = asyncSignal();
 
-await signal();        // First use
-await signal();        // Returns same completed promise
-signal.reset();        // Reset for reuse
-await signal();        // Can be used again
+await signal(); // First use
+await signal(); // Returns same completed promise
+signal.reset(); // Reset for reuse
+await signal(); // Can be used again
 ```
 
 ## Advanced Usage
 
-### Constraint Functions
+### Until Functions
 
 Add conditions that must be met before a signal can resolve:
 
 ```typescript
 let ready = false;
-const signal = asyncSignal({ constraint: () => ready });
+const signal = asyncSignal({ until: () => ready });
 
 // This won't resolve until ready is true
-signal.resolve(); // Will be blocked by constraint
+signal.resolve(); // Will be blocked until condition is met
 
 ready = true;
 signal.resolve(); // Now it will resolve
@@ -103,15 +130,15 @@ Control whether signals automatically reset after completion. By default, `autoR
 ```typescript
 // With autoReset disabled (default)
 const signal1 = asyncSignal();
-await signal1();        // First use
-await signal1();        // Returns same completed promise
-signal1.reset();        // Must manually reset to reuse
-await signal1();        // Now can be used again
+await signal1(); // First use
+await signal1(); // Returns same completed promise
+signal1.reset(); // Must manually reset to reuse
+await signal1(); // Now can be used again
 
 // With autoReset enabled
 const signal2 = asyncSignal({ autoReset: true });
-await signal2();        // Auto-resets after completion
-await signal2();        // Can be used again without manual reset
+await signal2(); // Auto-resets after completion
+await signal2(); // Can be used again without manual reset
 ```
 
 ### Abort Behavior Control
@@ -120,34 +147,35 @@ Control when the AbortController should be aborted using the `abortAt` option:
 
 ```typescript
 // Default: abort on resolve, reject, and reset
-const signal1 = asyncSignal({ abortAt: 'all' });
+const signal1 = asyncSignal({ abortAt: "all" });
 
 // Only abort on reject (useful for network requests)
-const signal2 = asyncSignal({ abortAt: 'reject' });
+const signal2 = asyncSignal({ abortAt: "reject" });
 
 // Only abort on resolve (useful for resource cleanup)
-const signal3 = asyncSignal({ abortAt: 'resolve' });
+const signal3 = asyncSignal({ abortAt: "resolve" });
 
 // Never auto-abort (manual control)
-const signal4 = asyncSignal({ abortAt: 'none' });
+const signal4 = asyncSignal({ abortAt: "none" });
 ```
 
 #### Use Cases
 
 **Network Request Cancellation (abort only on errors):**
+
 ```typescript
-const signal = asyncSignal({ abortAt: 'reject' });
+const signal = asyncSignal({ abortAt: "reject" });
 const abortSignal = signal.getAbortSignal();
 
 async function fetchData() {
-  try {
-    const response = await fetch('/api/data', { signal: abortSignal! });
-    signal.resolve('Success');
-    return response;
-  } catch (error) {
-    signal.reject(error);
-    throw error;
-  }
+    try {
+        const response = await fetch("/api/data", { signal: abortSignal! });
+        signal.resolve("Success");
+        return response;
+    } catch (error) {
+        signal.reject(error);
+        throw error;
+    }
 }
 
 // On success: fetch completes, no abort
@@ -155,12 +183,13 @@ async function fetchData() {
 ```
 
 **Resource Cleanup (abort only on success):**
+
 ```typescript
-const signal = asyncSignal({ abortAt: 'resolve' });
+const signal = asyncSignal({ abortAt: "resolve" });
 const abortSignal = signal.getAbortSignal();
 
-abortSignal.addEventListener('abort', () => {
-  cleanupTemporaryFiles();
+abortSignal.addEventListener("abort", () => {
+    cleanupTemporaryFiles();
 });
 
 // Signal will abort and cleanup on success, but not on failure
@@ -176,7 +205,7 @@ const signal = asyncSignal();
 // Get abort signal for fetch calls
 const abortSignal = signal.getAbortSignal();
 
-fetch('/api/data', { signal: abortSignal });
+fetch("/api/data", { signal: abortSignal });
 
 // Abort will reject both the signal and fetch
 signal.abort();
@@ -194,46 +223,11 @@ signal.destroy();
 
 // Subsequent awaits will throw AbortError
 try {
-  await signal();
+    await signal();
 } catch (error) {
-  console.log(error.name); // 'AbortError'
+    console.log(error.name); // 'AbortError'
 }
 ```
-
-## AsyncSignalManager
-
-Manage multiple signals with batch operations:
-
-```typescript
-import { AsyncSignalManager } from 'asyncsignal';
-
-// Create manager with default timeout
-const manager = new AsyncSignalManager({
-  timeout: 60000 // 1 minute default timeout
-});
-
-// Create signals through manager
-const signal1 = manager.create();
-const signal2 = manager.create();
-
-// Batch operations
-manager.resolve('all resolved');      // Resolve all signals
-manager.reject(new Error('failed'));  // Reject all signals
-manager.reset();                      // Reset all signals
-
-// Destroy specific signals
-manager.destroy(signal1.id);
-
-// Destroy all signals
-manager.destroy();
-```
-
-### Manager Use Cases
-
-- **Parallel Operations**: Coordinate multiple async tasks
-- **Resource Management**: Clean up multiple signals at once
-- **Batch Operations**: Resolve/reject multiple operations simultaneously
-- **Timeout Control**: Set consistent timeouts across operations
 
 ## Real-World Examples
 
@@ -241,51 +235,37 @@ manager.destroy();
 
 ```typescript
 function waitForEvent(element: string, event: string) {
-  const signal = asyncSignal();
-  
-  document.querySelector(element).addEventListener(event, () => {
-    signal.resolve();
-  }, { once: true });
-  
-  return signal(5000, new Error('Event timeout'));
+    const signal = asyncSignal();
+
+    document.querySelector(element).addEventListener(
+        event,
+        () => {
+            signal.resolve();
+        },
+        { once: true },
+    );
+
+    return signal(5000, new Error("Event timeout"));
 }
 
 // Wait for click event
-await waitForEvent('#button', 'click');
-```
-
-### Async Task Queue
-
-```typescript
-const manager = new AsyncSignalManager({ timeout: 30000 });
-
-function processTasks(tasks: any[]) {
-  const signals = tasks.map(() => manager.create());
-  
-  tasks.forEach((task, index) => {
-    processTask(task)
-      .then(result => signals[index].resolve(result))
-      .catch(error => signals[index].reject(error));
-  });
-  
-  return Promise.all(signals.map(s => s()));
-}
+await waitForEvent("#button", "click");
 ```
 
 ### Conditional Operations
 
 ```typescript
 function waitForCondition(condition: () => boolean, timeout = 5000) {
-  // Enable autoReset for multiple condition checks
-  const signal = asyncSignal({ constraint: condition, timeout, autoReset: true });
+    // Enable autoReset for multiple condition checks
+    const signal = asyncSignal({ until: condition, timeout, autoReset: true });
 
-  const interval = setInterval(() => {
-    if (signal.resolve()) {
-      clearInterval(interval);
-    }
-  }, 100);
+    const interval = setInterval(() => {
+        if (signal.resolve()) {
+            clearInterval(interval);
+        }
+    }, 100);
 
-  return signal(timeout, new Error('Condition not met'));
+    return signal(timeout, new Error("Condition not met"));
 }
 ```
 
@@ -294,53 +274,62 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 ### asyncSignal()
 
 ```typescript
-function asyncSignal(
-  options?: AsyncSignalOptions
-): IAsyncSignal
+function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
 ```
 
 **Parameters:**
+
 - `options` - Configuration options
-  - `constraint` - Optional function that must return true for resolve to succeed
-  - `timeout` - Default timeout in milliseconds (default: 0)
-  - `autoReset` - Automatically reset signal after completion (default: false)
-  - `abortAt` - Control when to abort AbortController (default: 'all')
-    - `'all'` - Abort on resolve, reject, and reset
-    - `'reject'` - Only abort on reject
-    - `'resolve'` - Only abort on resolve
-    - `'none'` - Never auto-abort
+    - `until` - Optional function that must return true for resolve to succeed
+    - `timeout` - Default timeout in milliseconds (default: 0)
+    - `autoReset` - Automatically reset signal after completion (default: false)
+    - `abortAt` - Control when to abort AbortController (default: 'all')
+        - `'all'` - Abort on resolve, reject, and reset
+        - `'reject'` - Only abort on reject
+        - `'resolve'` - Only abort on resolve
+        - `'none'` - Never auto-abort
 
 **Returns:** `IAsyncSignal` - Signal object with methods and properties
 
 ### IAsyncSignal Interface
 
 ```typescript
-interface IAsyncSignal {
-  (timeout?: number, returns?: any): Promise<any>;
-  id: number;
-  reset(): void;
-  reject(e?: Error | string): void;
-  resolve(result?: any): void;
-  destroy(): void;
-  isResolved(): boolean;
-  isRejected(): boolean;
-  isPending(): boolean;
-  abort(): void;
-  getAbortSignal(): AbortSignal;
+interface IAsyncSignal<T = any> {
+    (timeout?: number, returns?: T): Promise<T>;
+    id: number;
+    reset(): void;
+    reject(e?: Error | string): void;
+    resolve(result?: T): void;
+    destroy(): void;
+    isFulfilled(): boolean;
+    isRejected(): boolean;
+    isPending(): boolean;
+    abort(): void;
+    getAbortSignal(): AbortSignal;
+    result: T | undefined;
+    error: any;
 }
 ```
 
-### AsyncSignalManager
+**Properties:**
+
+- `result` - The resolved value (undefined if not resolved or rejected)
+- `error` - The rejected error (undefined if not rejected or resolved)
+
+**Accessing Results:**
 
 ```typescript
-class AsyncSignalManager {
-  constructor(options?: { timeout: number });
-  create(constraint?: () => boolean): IAsyncSignal;
-  destroy(id?: number | number[]): void;
-  resolve(...args: any[]): void;
-  reject(e?: Error | string): void;
-  reset(): void;
-}
+const signal = asyncSignal<string>();
+signal.resolve("success");
+await signal();
+
+console.log(signal.result); // 'success'
+console.log(signal.error); // undefined
+
+// After rejection
+signal.reject(new Error("failed"));
+console.log(signal.result); // undefined
+console.log(signal.error); // Error: failed
 ```
 
 ## Open Source Projects

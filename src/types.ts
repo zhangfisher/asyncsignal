@@ -1,15 +1,23 @@
-export interface IAsyncSignal {
-    (timeout?: number, returns?: any): Awaited<Promise<any>>;
+export interface IAsyncSignal<T = any> {
+    (timeout?: number, returns?: T): Awaited<Promise<T>>;
     id: number;
     reset(): void;
     reject(e?: Error | string): void;
-    resolve(result?: any): void;
+    resolve(result?: T): void;
     destroy(): void;
-    isResolved(): boolean;
+    isFulfilled(): boolean;
     isRejected(): boolean;
     isPending(): boolean;
     abort(): void;
     getAbortSignal: () => AbortSignal;
+    /**
+     * 异步信号的错误信息
+     */
+    error: any;
+    /**
+     * 异步信号的结果值
+     */
+    result: T | undefined;
 }
 
 /**
@@ -24,5 +32,5 @@ export type AbortBehavior = "all" | "reject" | "resolve" | "none";
 export type AsyncSignalOptions = {
     autoReset?: boolean;
     abortAt?: AbortBehavior;
-    constraint?: () => boolean;
+    until?: () => boolean;
 };
