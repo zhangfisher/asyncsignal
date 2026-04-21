@@ -1,4 +1,4 @@
-import { AsyncSignalOptions, IAsyncSignal } from "./types";
+import { AsyncSignalOptions, IAsyncSignal, IAsyncSignalConstructor } from "./types";
 import { AbortError } from "./errors";
 
 let AsyncSignalId = 0;
@@ -216,3 +216,33 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
 
     return signal as unknown as IAsyncSignal;
 }
+
+/**
+ *
+ * 创建一个已经resolve的信号
+ *
+ */
+asyncSignal.resolve = <T = any>(result: any) => {
+    const signal = asyncSignal<T>();
+    signal.resolve(result);
+    return signal;
+};
+
+/**
+ *
+ * 创建一个已经reject的信号
+ *
+ */
+asyncSignal.reject = <T = any>(error?: Error | string) => {
+    const signal = asyncSignal<T>();
+
+    // 首先调用 signal() 来初始化 Promise
+    const promise = signal() as Promise<any>;
+    // 立即捕获这个 Promise 以避免未捕获的 rejection
+    promise.catch(() => {});
+
+    // 然后调用 reject
+    signal.reject(error);
+
+    return signal;
+};

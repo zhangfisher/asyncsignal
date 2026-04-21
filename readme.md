@@ -7,6 +7,7 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 ## Features
 
 - **Signal Control**: Create reusable async signals that can be manually resolved or rejected
+- **Static Methods**: Create pre-resolved or pre-rejected signals with `asyncSignal.resolve()` and `asyncSignal.reject()`
 - **Timeout Support**: Built-in timeout functionality for async operations
 - **Constraint Functions**: Add conditional logic to control when signals can resolve
 - **Abort Support**: Native integration with AbortController for cancellation
@@ -41,6 +42,65 @@ signal.resolve("resolved value");
 
 // Or reject the signal
 signal.reject(new Error("rejected error"));
+```
+
+### Static Methods
+
+Create pre-resolved or pre-rejected signals:
+
+```typescript
+// Create a pre-resolved signal
+const resolvedSignal = asyncSignal.resolve("success");
+console.log(resolvedSignal.isFulfilled()); // true
+console.log(resolvedSignal.result); // 'success'
+
+// Create a pre-rejected signal
+const rejectedSignal = asyncSignal.reject("error");
+console.log(rejectedSignal.isRejected()); // true
+console.log(rejectedSignal.error?.message); // 'error'
+
+// Useful for providing default values
+const defaultValue = asyncSignal.resolve({ count: 0, data: [] });
+```
+
+**Use Case - Fallback Values:**
+
+```typescript
+function fetchWithFallback(url: string) {
+    const signal = asyncSignal();
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => signal.resolve(data))
+        .catch(() => {
+            // On error, use fallback value
+            const fallback = asyncSignal.resolve({ error: "Failed to fetch", data: null });
+            signal.resolve(fallback.result);
+        });
+
+    return signal;
+}
+```
+
+**Use Case - Testing and Mocking:**
+
+```typescript
+// Test successful scenario
+async function testSuccess() {
+    const mockSignal = asyncSignal.resolve({ id: 1, name: "Test" });
+    const result = await mockSignal();
+    console.log(result); // { id: 1, name: "Test" }
+}
+
+// Test error scenario
+async function testError() {
+    const mockSignal = asyncSignal.reject("Network error");
+    try {
+        await mockSignal();
+    } catch (error) {
+        console.log((error as Error).message); // 'Network error'
+    }
+}
 ```
 
 ### Timeout Support
@@ -276,6 +336,11 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 ```typescript
 function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
 ```
+
+**Static Methods:**
+
+- `asyncSignal.resolve<T>(result?: T): IAsyncSignal<T>` - Create a pre-resolved signal
+- `asyncSignal.reject<T>(error?: Error | string): IAsyncSignal<T>` - Create a pre-rejected signal
 
 **Parameters:**
 

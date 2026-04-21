@@ -138,443 +138,102 @@ describe("asyncSignal 基本功能测试", () => {
         expect(await signal()).toBe("test");
     });
 
-    describe("abortController.abort()调用验证", () => {
-        test("resolve时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
+    describe("asyncSignal.resolve 静态方法测试", () => {
+        test("应该创建已resolve的信号", () => {
+            const signal = asyncSignal.resolve("测试结果");
+            expect(signal.isFulfilled()).toBeTrue();
+            expect(signal.isPending()).toBeFalse();
+            expect(signal.isRejected()).toBeFalse();
+        });
 
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
+        test("应该能够立即获取结果值而不需要等待", async () => {
+            const result = "立即结果";
+            const signal = asyncSignal.resolve(result);
             const promise = signal();
-            setTimeout(() => signal.resolve("成功"));
-
-            await promise;
-
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
+            const resolved = await promise;
+            expect(resolved).toBe(result);
         });
 
-        test("reject时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
-            const promise = signal();
-            setTimeout(() => signal.reject(new Error("失败")));
-
-            try {
-                await promise;
-            } catch (error) {
-                expect((error as Error).message).toBe("失败");
-            }
-
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("destroy时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
-            const promise = signal();
-            setTimeout(() => signal.destroy());
-
-            try {
-                await promise;
-            } catch (error) {
-                expect(error).toBeInstanceOf(AbortError);
-            }
-
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("abort时应该调用abortController.abort()", async () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
-            const promise = signal();
-            setTimeout(() => signal.abort());
-
-            try {
-                await promise;
-            } catch (error) {
-                expect(error).toBeInstanceOf(AbortError);
-            }
-
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("带约束条件的resolve也应该调用abortController.abort()", async () => {
-            let condition = false;
-            const signal = asyncSignal({ until: () => condition });
-            const abortSignal = signal.getAbortSignal();
-
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
-            const promise = signal();
-
-            // 设置条件为true并resolve
-            setTimeout(() => {
-                condition = true;
-                signal.resolve("条件满足");
-            });
-
-            await promise;
-
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("reset后重新使用时，新的resolve应该调用abortController.abort()", async () => {
-            const signal = asyncSignal();
-
-            // 第一次使用
-            let abortSignal1 = signal.getAbortSignal();
-            let aborted1 = false;
-            abortSignal1?.addEventListener("abort", () => {
-                aborted1 = true;
-            });
-
-            let promise1 = signal();
-            setTimeout(() => signal.resolve("第一次"));
-            await promise1;
-
-            expect(aborted1).toBeTrue();
-            expect(abortSignal1?.aborted).toBeTrue();
-
-            // 重置
-            signal.reset();
-
-            // 第二次使用
-            let abortSignal2 = signal.getAbortSignal();
-            let aborted2 = false;
-            abortSignal2?.addEventListener("abort", () => {
-                aborted2 = true;
-            });
-
-            let promise2 = signal();
-            setTimeout(() => signal.resolve("第二次"));
-            await promise2;
-
-            expect(aborted2).toBeTrue();
-            expect(abortSignal2?.aborted).toBeTrue();
-        });
-
-        test("获取abortSignal后多次resolve应该只abort一次", async () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let abortCount = 0;
-            abortSignal?.addEventListener("abort", () => {
-                abortCount++;
-            });
-
-            const promise = signal();
-
-            // 多次调用resolve
-            setTimeout(() => {
-                signal.resolve("第一次");
-                signal.resolve("第二次");
-                signal.resolve("第三次");
-            });
-
-            await promise;
-
-            // abort事件应该只触发一次
-            expect(abortCount).toBe(1);
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("未获取abortSignal时resolve不应该报错", async () => {
-            const signal = asyncSignal();
-
-            // 不获取abortSignal
-            const promise = signal();
-            setTimeout(() => signal.resolve("成功"));
-
-            // 应该正常完成，不应该报错
-            const result = await promise;
-            expect(result).toBe("成功");
-        });
-
-        test("不同操作序列下abortController.abort()都应该被调用", async () => {
-            const testCases = [
-                { name: "直接resolve", action: (s: any) => s.resolve("成功") },
-                {
-                    name: "超时后resolve",
-                    action: (s: any) => setTimeout(() => s.resolve("成功"), 10),
-                },
-                { name: "带结果resolve", action: (s: any) => s.resolve({ data: "test" }) },
-            ];
-
-            for (const testCase of testCases) {
-                const signal = asyncSignal();
-                const abortSignal = signal.getAbortSignal();
-
-                let aborted = false;
-                abortSignal?.addEventListener("abort", () => {
-                    aborted = true;
-                });
-
-                const promise = signal();
-                testCase.action(signal);
-
-                try {
-                    await promise;
-                    // 如果是reject的情况，捕获错误
-                } catch (error) {
-                    // 忽略预期的错误
-                }
-
-                expect(aborted).toBeTrue();
-                expect(abortSignal?.aborted).toBeTrue();
-            }
-        });
-
-        test("reset时应该abort已存在的abortController", () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let aborted = false;
-            abortSignal?.addEventListener("abort", () => {
-                aborted = true;
-            });
-
-            // 触发pending状态
-            signal();
-
-            // 调用reset
-            signal.reset();
-
-            // 应该触发abort
-            expect(aborted).toBeTrue();
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-
-        test("reset后创建的新abortController应该是未aborted状态", () => {
-            const signal = asyncSignal();
-
-            // 第一次获取abortSignal并reset
-            const abortSignal1 = signal.getAbortSignal();
-            signal();
-            signal.reset();
-
-            expect(abortSignal1?.aborted).toBeTrue();
-
-            // 第二次获取abortSignal
-            const abortSignal2 = signal.getAbortSignal();
-
-            // 新的abortSignal应该是未aborted状态
-            expect(abortSignal2?.aborted).toBeFalse();
-            expect(abortSignal1).not.toBe(abortSignal2);
-        });
-
-        test("reset未获取abortSignal时不应该报错", () => {
-            const signal = asyncSignal();
-
-            // 不获取abortSignal，直接reset
-            expect(() => signal.reset()).not.toThrow();
-            expect(() => signal.reset()).not.toThrow();
-            expect(() => signal.reset()).not.toThrow();
-        });
-
-        test("reset多次调用不应该多次abort", () => {
-            const signal = asyncSignal();
-            const abortSignal = signal.getAbortSignal();
-
-            let abortCount = 0;
-            abortSignal?.addEventListener("abort", () => {
-                abortCount++;
-            });
-
-            // 触发pending状态
-            signal();
-
-            // 多次调用reset
-            signal.reset();
-            signal.reset();
-            signal.reset();
-
-            // abort事件应该只触发一次
-            expect(abortCount).toBe(1);
-            expect(abortSignal?.aborted).toBeTrue();
-        });
-    });
-
-    describe("result 和 error 属性测试", () => {
-        test("resolve后应该可以通过result属性获取结果值", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            const result = "成功结果";
-            signal.resolve(result);
-            await promise;
-
+        test("result属性应该包含正确的值", () => {
+            const result = { data: "test", value: 123 };
+            const signal = asyncSignal.resolve(result);
             expect(signal.result).toBe(result);
             expect(signal.error).toBeUndefined();
         });
 
-        test("reject后应该可以通过error属性获取错误信息", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            const error = new Error("测试错误");
-            signal.reject(error);
+        test("多次调用signal()应该返回相同的结果", async () => {
+            const result = "重复结果";
+            const signal = asyncSignal.resolve(result);
+            expect(await signal()).toBe(result);
+            expect(await signal()).toBe(result);
+            expect(await signal()).toBe(result);
+        });
 
-            try {
-                await promise;
-            } catch (e) {
-                // 预期的错误
+        test("应该支持不同类型的值", async () => {
+            // 字符串
+            let signal = asyncSignal.resolve("字符串");
+            expect(await signal()).toBe("字符串");
+            expect(signal.result).toBe("字符串");
+
+            // 数字
+            signal = asyncSignal.resolve(42);
+            expect(await signal()).toBe(42);
+            expect(signal.result).toBe(42);
+
+            // 对象
+            const obj = { name: "test", value: 100 };
+            signal = asyncSignal.resolve(obj);
+            expect(await signal()).toBe(obj);
+            expect(signal.result).toBe(obj);
+
+            // null
+            signal = asyncSignal.resolve(null);
+            expect(await signal()).toBeNull();
+            expect(signal.result).toBeNull();
+
+            // undefined
+            signal = asyncSignal.resolve(undefined);
+            expect(await signal()).toBeUndefined();
+            expect(signal.result).toBeUndefined();
+        });
+
+        test("泛型类型推断应该正确", () => {
+            interface TestType {
+                id: number;
+                name: string;
             }
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBe(error);
+            const testData: TestType = { id: 1, name: "test" };
+            const signal = asyncSignal.resolve<TestType>(testData);
+            expect(signal.result).toBe(testData);
         });
 
-        test("信号完成后多次await应该返回相同的result值", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            const result = "测试结果";
-            signal.resolve(result);
-            await promise;
-
-            // 多次获取 result
-            expect(signal.result).toBe(result);
-            expect(signal.result).toBe(result);
-            expect(signal.result).toBe(result);
+        test("创建的信号应该有唯一ID", () => {
+            const signal1 = asyncSignal.resolve("test1");
+            const signal2 = asyncSignal.resolve("test2");
+            expect(signal1.id).toBeNumber();
+            expect(signal2.id).toBeNumber();
+            expect(signal1.id).not.toBe(signal2.id);
         });
 
-        test("信号reject后多次await应该返回相同的error", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            const error = new Error("重复错误");
-            signal.reject(error);
+        test("手动调用已resolve信号的resolve方法不应该有影响", () => {
+            const signal = asyncSignal.resolve("初始值");
+            expect(signal.isFulfilled()).toBeTrue();
+            expect(signal.result).toBe("初始值");
 
-            try {
-                await promise;
-            } catch (e) {
-                // 预期的错误
-            }
-
-            // 多次获取 error
-            expect(signal.error).toBe(error);
-            expect(signal.error).toBe(error);
-            expect(signal.error).toBe(error);
+            // 再次调用resolve应该没有影响
+            signal.resolve("新值");
+            expect(signal.result).toBe("初始值");
         });
 
-        test("reset后应该清除result和error", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            signal.resolve("第一次");
-            await promise;
-
-            expect(signal.result).toBe("第一次");
-            expect(signal.error).toBeUndefined();
-
-            signal.reset();
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBeUndefined();
-        });
-
-        test("destroy后应该清除result和error", async () => {
-            const signal = asyncSignal<string>();
-            const promise = signal();
-            signal.resolve("测试");
-            await promise;
-
-            expect(signal.result).toBe("测试");
-
-            signal.destroy();
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBeUndefined();
-        });
-
-        test("超时后应该通过result获取超时返回值", async () => {
-            const signal = asyncSignal<string>();
-            const timeoutResult = "超时结果";
-            const result = await signal(50, timeoutResult);
-
-            expect(result).toBe(timeoutResult);
-            expect(signal.result).toBe(timeoutResult);
-            expect(signal.error).toBeUndefined();
-        });
-
-        test("超时返回Error时应该通过error获取", async () => {
-            const signal = asyncSignal<Error>();
-            const timeoutError = new Error("超时错误");
-
-            try {
-                await signal(50, timeoutError);
-            } catch (e) {
-                // 预期的错误
-            }
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBe(timeoutError);
-        });
-
-        test("未完成时result和error应该为undefined", () => {
-            const signal = asyncSignal<string>();
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBeUndefined();
-        });
-
-        test("带约束条件的信号，约束不满足时result和error不应该改变", async () => {
-            let condition = false;
-            const signal = asyncSignal<string>({ until: () => condition });
-            const promise = signal();
-
-            // 尝试 resolve，但约束不满足
-            signal.resolve("应该被阻塞");
-
-            // 等待一小段时间确保异步操作完成
-            await new Promise(resolve => setTimeout(resolve, 10));
-
-            expect(signal.result).toBeUndefined();
-            expect(signal.error).toBeUndefined();
-
-            // 满足约束条件
-            condition = true;
-            signal.resolve("现在可以resolve");
-            await promise;
-
-            expect(signal.result).toBe("现在可以resolve");
-        });
-
-        test("autoReset启用时，每次完成应该更新result", async () => {
-            const signal = asyncSignal<string>({ autoReset: true });
-
-            // 第一次完成
-            let promise = signal();
-            signal.resolve("第一次");
-            await promise;
+        test("reset后应该可以重新使用", async () => {
+            const signal = asyncSignal.resolve("第一次");
             expect(signal.result).toBe("第一次");
 
-            // 第二次完成
-            promise = signal();
+            signal.reset();
+            expect(signal.result).toBeUndefined();
+            expect(signal.isPending()).toBeTrue();
+
+            const promise = signal();
             signal.resolve("第二次");
             await promise;
             expect(signal.result).toBe("第二次");

@@ -20,6 +20,12 @@ export interface IAsyncSignal<T = any> {
     result: T | undefined;
 }
 
+export interface IAsyncSignalConstructor {
+    <T = any>(options?: AsyncSignalOptions): IAsyncSignal<T>;
+    resolve<T = any>(result: any): IAsyncSignal<T>;
+    reject<T = any>(error?: Error | string): IAsyncSignal<T>;
+}
+
 /**
  * Abort行为类型
  * - 'all': 默认，在resolve、reject、reset时都abort abortController

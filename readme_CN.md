@@ -7,6 +7,7 @@
 ## 特性
 
 - **信号控制**：创建可手动 resolve 或 reject 的可复用异步信号
+- **静态方法**：使用 `asyncSignal.resolve()` 和 `asyncSignal.reject()` 创建预解析或预拒绝的信号
 - **超时支持**：为异步操作内置超时功能
 - **约束函数**：添加条件逻辑来控制信号何时可以 resolve
 - **中止支持**：与 AbortController 原生集成，支持取消操作
@@ -43,6 +44,65 @@ signal.resolve("resolved value");
 
 // 或 reject 信号
 signal.reject(new Error("rejected error"));
+```
+
+### 静态方法
+
+创建已预解析或预拒绝的信号：
+
+```typescript
+// 创建一个已解析的信号
+const resolvedSignal = asyncSignal.resolve("成功");
+console.log(resolvedSignal.isFulfilled()); // true
+console.log(resolvedSignal.result); // '成功'
+
+// 创建一个已拒绝的信号
+const rejectedSignal = asyncSignal.reject("错误");
+console.log(rejectedSignal.isRejected()); // true
+console.log(rejectedSignal.error?.message); // '错误'
+
+// 用于提供默认值
+const defaultValue = asyncSignal.resolve({ count: 0, data: [] });
+```
+
+**实际应用 - 提供回退值：**
+
+```typescript
+function fetchWithFallback(url: string) {
+    const signal = asyncSignal();
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => signal.resolve(data))
+        .catch(() => {
+            // 出错时使用回退值
+            const fallback = asyncSignal.resolve({ error: "获取失败", data: null });
+            signal.resolve(fallback.result);
+        });
+
+    return signal;
+}
+```
+
+**实际应用 - 测试和模拟：**
+
+```typescript
+// 测试成功场景
+async function testSuccess() {
+    const mockSignal = asyncSignal.resolve({ id: 1, name: "测试" });
+    const result = await mockSignal();
+    console.log(result); // { id: 1, name: "测试" }
+}
+
+// 测试错误场景
+async function testError() {
+    const mockSignal = asyncSignal.reject("网络错误");
+    try {
+        await mockSignal();
+    } catch (error) {
+        console.log((error as Error).message); // '网络错误'
+    }
+}
 ```
 
 ### 超时支持
@@ -278,6 +338,11 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 ```typescript
 function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
 ```
+
+**静态方法：**
+
+- `asyncSignal.resolve<T>(result?: T): IAsyncSignal<T>` - 创建一个已解析的信号
+- `asyncSignal.reject<T>(error?: Error | string): IAsyncSignal<T>` - 创建一个已拒绝的信号
 
 **参数：**
 
