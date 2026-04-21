@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.9
+
+### Patch Changes
+
+- 394f5c5: feat: 新增加 `asyncSignal.resolve` 和 `asyncSignal.reject` 两个静态方法，用于直接创建一个已完成和已失败的信号。
+
 ## 0.0.8
 
 ### Patch Changes
