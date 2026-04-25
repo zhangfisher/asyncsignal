@@ -20,14 +20,26 @@ let AsyncSignalId = 0;
  *      - abortAt: abort行为
  * @returns {function}
  */
+function defineSignalProperty(signal: any, name: string, getValue: () => any) {
+    Object.defineProperty(signal, name, {
+        get: getValue,
+        enumerable: true,
+        configurable: true,
+    });
+}
 
 export function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(
     options?: AsyncSignalOptions,
 ): IAsyncSignal<T, M> {
     const { autoReset = false, abortAt = "all", until } = options || {};
-    let isFulfilled: boolean = false,
-        isRejected: boolean = false,
-        isPending: boolean = true;
+    // 状态变量
+    let isFulfilled: boolean = false, // 结果状态：成功
+        isRejected: boolean = false, // 结果状态：失败
+        isPending: boolean = true; // 过程状态：正在进行
+
+    // 状态转换锁，防止并发状态转换
+    let isTransitioning: boolean = false;
+
     let resolveSignal: Function,
         rejectSignal: Function,
         timeoutId: any = 0;
@@ -62,6 +74,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
         isFulfilled = false;
         isRejected = false;
         isPending = true;
+        isTransitioning = false; // 重置转换锁
         rejectError = undefined;
         resolveResult = undefined;
         completionTimestamp = 0;
@@ -96,19 +109,28 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
         // 指定超时功能
         if (timeout > 0) {
             timeoutId = setTimeout(() => {
-                // 添加状态检查，防止在已经处理的信号上重复操作
-                if (!isPending || isFulfilled || isRejected) {
-                    // 信号已经被其他操作处理，跳过超时处理
+                // 原子化检查和锁获取
+                if (isTransitioning || !isPending || isFulfilled || isRejected) {
+                    // 已经被其他操作处理，跳过超时处理
                     return;
                 }
 
-                // 状态锁：立即锁定状态
-                const originalPending = isPending;
-                isPending = false;
+                // 立即获取锁
+                isTransitioning = true;
+
+                // 原子化设置过程状态和结果状态
+                isPending = false; // 结束过程
+
+                if (returns instanceof Error) {
+                    isRejected = true; // 失败结果
+                    isFulfilled = false;
+                } else {
+                    isFulfilled = true; // 成功结果
+                    isRejected = false;
+                }
 
                 try {
                     completionTimestamp = Date.now();
-                    isFulfilled = true;
 
                     if (returns instanceof Error) {
                         rejectError = returns;
@@ -117,10 +139,12 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
                         resolveResult = returns;
                         resolveSignal(resolveResult);
                     }
-                } catch {
-                    // 出错时恢复原始状态
-                    isPending = originalPending;
-                    isFulfilled = false;
+                } catch (error) {
+                    // 出错时不恢复状态
+                    console.error("[asyncSignal] timeout handler error:", error);
+                } finally {
+                    // 释放锁
+                    isTransitioning = false;
                 }
             }, timeout);
         }
@@ -130,82 +154,88 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     signal.resolve = (result?: any) => {
         clearTimeout(timeoutId);
 
-        // 快速路径：状态检查
-        if (!isPending || isFulfilled || isRejected) {
-            return;
+        // 第一步：在获取锁之前检查 until 条件
+        // until 是同步函数，执行期间不会被其他代码打断
+        if (typeof until === "function" && !until()) {
+            return; // 不满足条件，直接返回，不改变任何状态
         }
 
-        // 状态锁：立即设置 isPending = false，防止其他并发操作
-        // 保存原始状态以便在出错时恢复
-        const originalPending = isPending;
-        isPending = false; // 立即锁定状态
+        // 第二步：原子化检查和锁获取
+        // JavaScript 单线程保证这个 if 判断是原子的
+        if (isTransitioning || !isPending || isFulfilled || isRejected) {
+            return; // 已经在转换中，或已完成，直接返回
+        }
 
-        let shouldFulfill: boolean = false;
+        // 第三步：立即获取锁
+        isTransitioning = true;
+
+        // 第四步：原子化设置过程状态和结果状态
+        // 关键：同时设置，避免窗口期
+        isPending = false; // 结束过程
+        isFulfilled = true; // 设置成功结果
+        isRejected = false; // 明确非失败
+
         try {
-            // 注意：是否真正resolve还受约束条件的约束，只有满足约束条件时才会真正resolve
-            if (typeof until === "function") {
-                if (until()) {
-                    if (shouldAbort("resolve") && abortController) abortController.abort();
-                    shouldFulfill = true;
-                    completionTimestamp = Date.now();
-                    resolveSignal(result);
-                } else {
-                    // 如果不满足约束条件，恢复原始状态
-                    isPending = originalPending;
-                    return;
-                }
-            } else {
-                if (shouldAbort("resolve") && abortController) abortController.abort();
-                shouldFulfill = true;
-                completionTimestamp = Date.now();
-                resolveSignal(result);
+            // 执行副作用（状态已经一致设置，即使出错也不回滚）
+            if (shouldAbort("resolve") && abortController) {
+                abortController.abort();
             }
+
+            // 更新结果和时间戳
+            resolveResult = result;
+            rejectError = undefined;
+            completionTimestamp = Date.now();
+
+            // 通知等待者
+            resolveSignal(result);
         } catch (error) {
-            // 出错时恢复原始状态
-            isPending = originalPending;
-            throw error;
+            // 关键决策：出错时不恢复状态
+            // 理由：
+            // 1. 过程状态和结果状态已经原子化设置
+            // 2. Promise 已经 resolve，不能"un-resolve"
+            // 3. 状态恢复会引入更复杂的竞态问题
+            console.error("[asyncSignal] resolve error:", error);
+            // 如果需要处理错误，应该通过其他机制（如事件）
         } finally {
-            if (shouldFulfill) {
-                resolveResult = result;
-                rejectError = undefined;
-                isFulfilled = true;
-                isPending = false; // 确认最终状态
-            }
+            // 释放锁
+            isTransitioning = false;
         }
     };
 
     signal.reject = (e?: Error | string) => {
         clearTimeout(timeoutId);
 
-        // 快速路径：状态检查
-        if (!isPending || isFulfilled || isRejected) {
-            return;
+        // 原子化检查和锁获取
+        if (isTransitioning || !isPending || isFulfilled || isRejected) {
+            return; // 已经在转换中，或已完成，直接返回
         }
 
-        // 状态锁：立即设置 isPending = false，防止其他并发操作
-        const originalPending = isPending;
-        isPending = false; // 立即锁定状态
+        // 立即获取锁
+        isTransitioning = true;
+
+        // 原子化设置过程状态和结果状态
+        isPending = false; // 结束过程
+        isFulfilled = false; // 明确非成功
+        isRejected = true; // 设置失败结果
 
         try {
+            // 执行副作用
             const err = typeof e === "string" ? new Error(e) : e instanceof Error ? e : new Error();
             rejectError = err;
             completionTimestamp = Date.now();
-            isRejected = true; // 立即设置状态
-            if (shouldAbort("reject") && abortController) abortController.abort();
+
+            if (shouldAbort("reject") && abortController) {
+                abortController.abort();
+            }
+
+            // 通知等待者
             rejectSignal(err);
         } catch (error) {
-            // 出错时恢复原始状态
-            isPending = originalPending;
-            isRejected = false; // 恢复状态
-            throw error;
+            // 出错时不恢复状态
+            console.error("[asyncSignal] reject error:", error);
         } finally {
-            // 确认最终状态
-            if (isRejected) {
-                isPending = false; // 确认非pending状态
-            } else if (!isFulfilled) {
-                // 如果reject没有成功，恢复原始状态
-                isPending = originalPending;
-            }
+            // 释放锁
+            isTransitioning = false;
         }
     };
 
@@ -213,82 +243,82 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     signal.destroy = () => {
         try {
             clearTimeout(timeoutId);
+
             if (isPending) {
+                // 使用 setTimeout 确保异步执行
                 setTimeout(() => {
                     try {
                         rejectSignal(new AbortError());
-                    } catch {}
+                    } catch {
+                        // 忽略错误
+                    }
                 });
-                if (abortController) abortController.abort();
+
+                if (abortController) {
+                    abortController.abort();
+                }
             }
+
+            // 清理所有状态（包括锁）
             isFulfilled = false;
-            isPending = false;
             isRejected = false;
+            isPending = false; // destroy 后信号处于非活动状态
+            isTransitioning = false;
+
             objPromise = null;
             abortController = null;
             resolveResult = undefined;
             rejectError = undefined;
             completionTimestamp = 0;
-        } catch {}
+        } catch (error) {
+            console.error("[asyncSignal] destroy error:", error);
+        }
     };
 
     signal.reset = reset;
     signal.isFulfilled = () => isFulfilled;
     signal.isRejected = () => isRejected;
     signal.isPending = () => isPending;
-
-    // 暴露 result 和 error 属性
-    Object.defineProperty(signal, "result", {
-        get: () => resolveResult,
-        enumerable: true,
-        configurable: true,
-    });
-
-    Object.defineProperty(signal, "error", {
-        get: () => rejectError,
-        enumerable: true,
-        configurable: true,
-    });
-
-    Object.defineProperty(signal, "timestamp", {
-        get: () => completionTimestamp,
-        enumerable: true,
-        configurable: true,
-    });
-
-    Object.defineProperty(signal, "meta", {
-        get: () => metadata,
-        enumerable: true,
-        configurable: true,
-    });
+    defineSignalProperty(signal, "result", () => resolveResult);
+    defineSignalProperty(signal, "error", () => rejectError);
+    defineSignalProperty(signal, "timestamp", () => completionTimestamp);
+    defineSignalProperty(signal, "meta", () => metadata);
 
     signal.abort = () => {
         clearTimeout(timeoutId);
 
-        // 快速路径：状态检查
-        if (!isPending || isFulfilled || isRejected) {
-            return;
+        // 原子化检查和锁获取
+        if (isTransitioning || !isPending || isFulfilled || isRejected) {
+            return; // 已经在转换中，或已完成，直接返回
         }
 
-        // 状态锁：立即设置 isPending = false，防止其他并发操作
-        const originalPending = isPending;
-        isPending = false; // 立即锁定状态
+        // 立即获取锁
+        isTransitioning = true;
+
+        // 原子化设置过程状态和结果状态（abort 是一种 reject）
+        isPending = false; // 结束过程
+        isFulfilled = false; // 明确非成功
+        isRejected = true; // 设置失败结果
 
         try {
-            if (abortController) abortController.abort();
-            abortController = null;
+            // 执行副作用
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+
             rejectError = new AbortError();
             resolveResult = undefined;
             completionTimestamp = Date.now();
+
+            // 通知等待者
             rejectSignal(rejectError);
         } catch (error) {
-            // 出错时恢复原始状态
-            isPending = originalPending;
-            throw error;
+            // 出错时不恢复状态
+            console.error("[asyncSignal] abort error:", error);
         } finally {
-            // 确保状态正确设置
-            isRejected = true; // abort 被视为一种 reject
-            isPending = false; // 确认最终状态
+            // 释放锁
+            isTransitioning = false;
         }
     };
     /**

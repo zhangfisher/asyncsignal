@@ -10,12 +10,7 @@ describe("竞态条件简单测试", () => {
 
         try {
             await promise;
-        } catch (error) {
-            console.log("Error caught:", (error as Error).message);
-            console.log("isRejected:", signal.isRejected());
-            console.log("isPending:", signal.isPending());
-            console.log("isFulfilled:", signal.isFulfilled());
-        }
+        } catch {}
 
         expect(signal.isRejected()).toBe(true);
     });
@@ -29,11 +24,7 @@ describe("竞态条件简单测试", () => {
 
         try {
             await promise;
-        } catch (error) {
-            console.log("Caught error:", (error as Error).message);
-            console.log("isRejected:", signal.isRejected());
-            console.log("error message:", signal.error?.message);
-        }
+        } catch {}
 
         // 应该只有第一个生效
         expect(signal.error?.message).toBe("first");
