@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.10
+
+### Patch Changes
+
+- 191268d: add timestamp and meta
+
 ## 0.0.9
 
 ### Patch Changes
