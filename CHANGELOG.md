@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.11
+
+### Patch Changes
+
+- df2ae00: 修复异步竞态问题
+
 ## 0.0.10
 
 ### Patch Changes
