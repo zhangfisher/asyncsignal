@@ -20,14 +20,6 @@ let AsyncSignalId = 0;
  *      - abortAt: abort行为
  * @returns {function}
  */
-function defineSignalProperty(signal: any, name: string, getValue: () => any) {
-    Object.defineProperty(signal, name, {
-        get: getValue,
-        enumerable: true,
-        configurable: true,
-    });
-}
-
 export function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(
     options?: AsyncSignalOptions,
 ): IAsyncSignal<T, M> {
@@ -51,26 +43,10 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     let completionTimestamp = 0;
     let metadata = {} as M;
 
-    // 辅助函数：根据abortAt决定是否应该abort
-    const shouldAbort = (action: "resolve" | "reject" | "reset"): boolean => {
-        switch (abortAt) {
-            case "all":
-                return true;
-            case "resolve":
-                return action === "resolve";
-            case "reject":
-                return action === "reject";
-            case "none":
-                return false;
-            default:
-                return true;
-        }
-    };
-
     // 重置信号，可以再次复用
     const reset = function () {
         clearTimeout(timeoutId);
-        if (shouldAbort("reset") && abortController) abortController.abort();
+        if (abortController && abortAt === "all") abortController.abort();
         isFulfilled = false;
         isRejected = false;
         isPending = true;
@@ -139,9 +115,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
                         resolveResult = returns;
                         resolveSignal(resolveResult);
                     }
-                } catch (error) {
-                    // 出错时不恢复状态
-                    console.error("[asyncSignal] timeout handler error:", error);
+                } catch {
                 } finally {
                     // 释放锁
                     isTransitioning = false;
@@ -177,7 +151,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
 
         try {
             // 执行副作用（状态已经一致设置，即使出错也不回滚）
-            if (shouldAbort("resolve") && abortController) {
+            if (abortController && (abortAt === "all" || abortAt === "resolve")) {
                 abortController.abort();
             }
 
@@ -188,14 +162,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
 
             // 通知等待者
             resolveSignal(result);
-        } catch (error) {
-            // 关键决策：出错时不恢复状态
-            // 理由：
-            // 1. 过程状态和结果状态已经原子化设置
-            // 2. Promise 已经 resolve，不能"un-resolve"
-            // 3. 状态恢复会引入更复杂的竞态问题
-            console.error("[asyncSignal] resolve error:", error);
-            // 如果需要处理错误，应该通过其他机制（如事件）
+        } catch {
         } finally {
             // 释放锁
             isTransitioning = false;
@@ -224,15 +191,13 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
             rejectError = err;
             completionTimestamp = Date.now();
 
-            if (shouldAbort("reject") && abortController) {
+            if (abortController && (abortAt === "all" || abortAt === "reject")) {
                 abortController.abort();
             }
 
             // 通知等待者
             rejectSignal(err);
-        } catch (error) {
-            // 出错时不恢复状态
-            console.error("[asyncSignal] reject error:", error);
+        } catch {
         } finally {
             // 释放锁
             isTransitioning = false;
@@ -271,7 +236,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
             rejectError = undefined;
             completionTimestamp = 0;
         } catch (error) {
-            console.error("[asyncSignal] destroy error:", error);
+            // 忽略错误
         }
     };
 
@@ -279,10 +244,27 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     signal.isFulfilled = () => isFulfilled;
     signal.isRejected = () => isRejected;
     signal.isPending = () => isPending;
-    defineSignalProperty(signal, "result", () => resolveResult);
-    defineSignalProperty(signal, "error", () => rejectError);
-    defineSignalProperty(signal, "timestamp", () => completionTimestamp);
-    defineSignalProperty(signal, "meta", () => metadata);
+
+    Object.defineProperty(signal, "result", {
+        get: () => resolveResult,
+        enumerable: true,
+        configurable: true,
+    });
+    Object.defineProperty(signal, "error", {
+        get: () => rejectError,
+        enumerable: true,
+        configurable: true,
+    });
+    Object.defineProperty(signal, "timestamp", {
+        get: () => completionTimestamp,
+        enumerable: true,
+        configurable: true,
+    });
+    Object.defineProperty(signal, "meta", {
+        get: () => metadata,
+        enumerable: true,
+        configurable: true,
+    });
 
     signal.abort = () => {
         clearTimeout(timeoutId);
@@ -313,9 +295,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
 
             // 通知等待者
             rejectSignal(rejectError);
-        } catch (error) {
-            // 出错时不恢复状态
-            console.error("[asyncSignal] abort error:", error);
+        } catch {
         } finally {
             // 释放锁
             isTransitioning = false;
