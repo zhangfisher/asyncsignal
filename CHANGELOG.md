@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.0.12
+
+### Patch Changes
+
+- c22b97f: 优化构建尺寸
+
 ## 0.0.11
 
 ### Patch Changes
