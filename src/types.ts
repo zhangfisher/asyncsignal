@@ -1,4 +1,4 @@
-export interface IAsyncSignal<T = any> {
+export interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
     (timeout?: number, returns?: T): Awaited<Promise<T>>;
     id: number;
     reset(): void;
@@ -18,12 +18,22 @@ export interface IAsyncSignal<T = any> {
      * 异步信号的结果值
      */
     result: T | undefined;
+    /**
+     * 信号完成或被拒绝的时间戳
+     * 如果信号还在等待中，则为 0
+     */
+    timestamp: number;
+    /**
+     * 额外的元数据存储
+     * 可以用于存储与信号相关的任何自定义数据
+     */
+    meta: M;
 }
 
 export interface IAsyncSignalConstructor {
-    <T = any>(options?: AsyncSignalOptions): IAsyncSignal<T>;
-    resolve<T = any>(result: any): IAsyncSignal<T>;
-    reject<T = any>(error?: Error | string): IAsyncSignal<T>;
+    <T = any, M extends Record<string, any> = Record<string, any>>(options?: AsyncSignalOptions): IAsyncSignal<T, M>;
+    resolve<T = any, M extends Record<string, any> = Record<string, any>>(result: any): IAsyncSignal<T, M>;
+    reject<T = any, M extends Record<string, any> = Record<string, any>>(error?: Error | string): IAsyncSignal<T, M>;
 }
 
 /**

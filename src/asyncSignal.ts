@@ -1,4 +1,4 @@
-import { AsyncSignalOptions, IAsyncSignal, IAsyncSignalConstructor } from "./types";
+import { AsyncSignalOptions, IAsyncSignal } from "./types";
 import { AbortError } from "./errors";
 
 let AsyncSignalId = 0;
@@ -21,7 +21,9 @@ let AsyncSignalId = 0;
  * @returns {function}
  */
 
-export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal<T> {
+export function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(
+    options?: AsyncSignalOptions,
+): IAsyncSignal<T, M> {
     const { autoReset = false, abortAt = "all", until } = options || {};
     let isFulfilled: boolean = false,
         isRejected: boolean = false,
@@ -34,6 +36,8 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
     let abortController: AbortController | null = null;
     let resolveResult: T | undefined;
     let rejectError: any;
+    let completionTimestamp = 0;
+    let metadata = {} as M;
 
     // 辅助函数：根据abortAt决定是否应该abort
     const shouldAbort = (action: "resolve" | "reject" | "reset"): boolean => {
@@ -60,6 +64,7 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
         isPending = true;
         rejectError = undefined;
         resolveResult = undefined;
+        completionTimestamp = 0;
         abortController = null;
         objPromise = new Promise((resolve, reject) => {
             resolveSignal = resolve;
@@ -91,8 +96,20 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
         // 指定超时功能
         if (timeout > 0) {
             timeoutId = setTimeout(() => {
-                isFulfilled = true;
+                // 添加状态检查，防止在已经处理的信号上重复操作
+                if (!isPending || isFulfilled || isRejected) {
+                    // 信号已经被其他操作处理，跳过超时处理
+                    return;
+                }
+
+                // 状态锁：立即锁定状态
+                const originalPending = isPending;
+                isPending = false;
+
                 try {
+                    completionTimestamp = Date.now();
+                    isFulfilled = true;
+
                     if (returns instanceof Error) {
                         rejectError = returns;
                         rejectSignal(returns);
@@ -100,7 +117,11 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
                         resolveResult = returns;
                         resolveSignal(resolveResult);
                     }
-                } catch {}
+                } catch {
+                    // 出错时恢复原始状态
+                    isPending = originalPending;
+                    isFulfilled = false;
+                }
             }, timeout);
         }
         return objPromise;
@@ -108,8 +129,17 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
     signal.id = signalId;
     signal.resolve = (result?: any) => {
         clearTimeout(timeoutId);
-        if (!isPending) return;
-        if (isFulfilled || isRejected) return;
+
+        // 快速路径：状态检查
+        if (!isPending || isFulfilled || isRejected) {
+            return;
+        }
+
+        // 状态锁：立即设置 isPending = false，防止其他并发操作
+        // 保存原始状态以便在出错时恢复
+        const originalPending = isPending;
+        isPending = false; // 立即锁定状态
+
         let shouldFulfill: boolean = false;
         try {
             // 注意：是否真正resolve还受约束条件的约束，只有满足约束条件时才会真正resolve
@@ -117,39 +147,65 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
                 if (until()) {
                     if (shouldAbort("resolve") && abortController) abortController.abort();
                     shouldFulfill = true;
+                    completionTimestamp = Date.now();
                     resolveSignal(result);
                 } else {
-                    // 如果不满足约束条件，则静默返回，可以通过signal.isFulfilled()来判断是否完成
+                    // 如果不满足约束条件，恢复原始状态
+                    isPending = originalPending;
                     return;
                 }
             } else {
                 if (shouldAbort("resolve") && abortController) abortController.abort();
                 shouldFulfill = true;
+                completionTimestamp = Date.now();
                 resolveSignal(result);
             }
+        } catch (error) {
+            // 出错时恢复原始状态
+            isPending = originalPending;
+            throw error;
         } finally {
             if (shouldFulfill) {
                 resolveResult = result;
                 rejectError = undefined;
                 isFulfilled = true;
-                isPending = false;
+                isPending = false; // 确认最终状态
             }
         }
     };
 
     signal.reject = (e?: Error | string) => {
         clearTimeout(timeoutId);
-        if (!isPending) return;
-        if (isFulfilled || isRejected) return;
+
+        // 快速路径：状态检查
+        if (!isPending || isFulfilled || isRejected) {
+            return;
+        }
+
+        // 状态锁：立即设置 isPending = false，防止其他并发操作
+        const originalPending = isPending;
+        isPending = false; // 立即锁定状态
+
         try {
             const err = typeof e === "string" ? new Error(e) : e instanceof Error ? e : new Error();
             rejectError = err;
+            completionTimestamp = Date.now();
+            isRejected = true; // 立即设置状态
             if (shouldAbort("reject") && abortController) abortController.abort();
             rejectSignal(err);
+        } catch (error) {
+            // 出错时恢复原始状态
+            isPending = originalPending;
+            isRejected = false; // 恢复状态
+            throw error;
         } finally {
-            resolveResult = undefined;
-            isRejected = true;
-            isPending = false;
+            // 确认最终状态
+            if (isRejected) {
+                isPending = false; // 确认非pending状态
+            } else if (!isFulfilled) {
+                // 如果reject没有成功，恢复原始状态
+                isPending = originalPending;
+            }
         }
     };
 
@@ -172,6 +228,7 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
             abortController = null;
             resolveResult = undefined;
             rejectError = undefined;
+            completionTimestamp = 0;
         } catch {}
     };
 
@@ -193,15 +250,45 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
         configurable: true,
     });
 
+    Object.defineProperty(signal, "timestamp", {
+        get: () => completionTimestamp,
+        enumerable: true,
+        configurable: true,
+    });
+
+    Object.defineProperty(signal, "meta", {
+        get: () => metadata,
+        enumerable: true,
+        configurable: true,
+    });
+
     signal.abort = () => {
         clearTimeout(timeoutId);
-        if (isPending) {
+
+        // 快速路径：状态检查
+        if (!isPending || isFulfilled || isRejected) {
+            return;
+        }
+
+        // 状态锁：立即设置 isPending = false，防止其他并发操作
+        const originalPending = isPending;
+        isPending = false; // 立即锁定状态
+
+        try {
             if (abortController) abortController.abort();
             abortController = null;
             rejectError = new AbortError();
             resolveResult = undefined;
-            isPending = false;
+            completionTimestamp = Date.now();
             rejectSignal(rejectError);
+        } catch (error) {
+            // 出错时恢复原始状态
+            isPending = originalPending;
+            throw error;
+        } finally {
+            // 确保状态正确设置
+            isRejected = true; // abort 被视为一种 reject
+            isPending = false; // 确认最终状态
         }
     };
     /**
@@ -214,7 +301,7 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
         return abortController?.signal;
     };
 
-    return signal as unknown as IAsyncSignal;
+    return signal as unknown as IAsyncSignal<T, M>;
 }
 
 /**
@@ -222,8 +309,10 @@ export function asyncSignal<T = any>(options?: AsyncSignalOptions): IAsyncSignal
  * 创建一个已经resolve的信号
  *
  */
-asyncSignal.resolve = <T = any>(result: any) => {
-    const signal = asyncSignal<T>();
+asyncSignal.resolve = <T = any, M extends Record<string, any> = Record<string, any>>(
+    result: any,
+) => {
+    const signal = asyncSignal<T, M>();
     signal.resolve(result);
     return signal;
 };
@@ -233,8 +322,10 @@ asyncSignal.resolve = <T = any>(result: any) => {
  * 创建一个已经reject的信号
  *
  */
-asyncSignal.reject = <T = any>(error?: Error | string) => {
-    const signal = asyncSignal<T>();
+asyncSignal.reject = <T = any, M extends Record<string, any> = Record<string, any>>(
+    error?: Error | string,
+) => {
+    const signal = asyncSignal<T, M>();
 
     // 首先调用 signal() 来初始化 Promise
     const promise = signal() as Promise<any>;

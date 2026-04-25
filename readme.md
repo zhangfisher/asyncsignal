@@ -8,6 +8,8 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 
 - **Signal Control**: Create reusable async signals that can be manually resolved or rejected
 - **Static Methods**: Create pre-resolved or pre-rejected signals with `asyncSignal.resolve()` and `asyncSignal.reject()`
+- **Timestamp Tracking**: Automatic timestamp recording when signals are fulfilled, rejected, or aborted
+- **Metadata Storage**: Built-in metadata object for storing custom data and tracking information
 - **Timeout Support**: Built-in timeout functionality for async operations
 - **Constraint Functions**: Add conditional logic to control when signals can resolve
 - **Abort Support**: Native integration with AbortController for cancellation
@@ -138,12 +140,14 @@ await signal();
 
 console.log(signal.result); // 'success'
 console.log(signal.error); // undefined
+console.log(signal.timestamp); // 1234567890 - timestamp when fulfilled
 
 // Reject and access error
 signal.reject(new Error("failed"));
 
 console.log(signal.result); // undefined
 console.log(signal.error); // Error: failed
+console.log(signal.timestamp); // 1234567891 - timestamp when rejected
 
 // Access without awaiting
 const signal2 = asyncSignal<number>();
@@ -151,6 +155,73 @@ signal2.resolve(42);
 
 console.log(signal2.result); // 42 - immediately available
 console.log(signal2.error); // undefined
+console.log(signal2.timestamp); // 1234567892 - timestamp when fulfilled
+
+// Pending signal has timestamp of 0
+const signal3 = asyncSignal();
+console.log(signal3.timestamp); // 0 - not yet fulfilled or rejected
+```
+
+### Metadata Storage
+
+Each signal has a `meta` object for storing custom metadata:
+
+```typescript
+const signal = asyncSignal();
+
+// Store custom data
+signal.meta.userId = "12345";
+signal.meta.requestId = "abc-123";
+signal.meta.attempts = 1;
+signal.meta.tags = ["important", "urgent"];
+
+// Track lifecycle events
+signal.meta.createdAt = Date.now();
+signal.meta.status = "pending";
+
+signal.resolve("success");
+await signal();
+
+signal.meta.status = "fulfilled";
+signal.meta.completedAt = signal.timestamp;
+
+// Metadata persists across reset
+signal.reset();
+console.log(signal.meta.userId); // "12345" - still available
+console.log(signal.meta.attempts); // 1 - preserved
+
+// Update for retry
+signal.meta.attempts = 2;
+```
+
+**Type-Safe Metadata with Generics:**
+
+You can specify the type of metadata using a second generic parameter:
+
+```typescript
+interface RequestMetadata {
+    requestId: string;
+    userId: string;
+    attemptNumber: number;
+    maxRetries: number;
+}
+
+// Create a signal with typed metadata
+const signal = asyncSignal<string, RequestMetadata>();
+
+// TypeScript now knows the exact type of meta
+signal.meta.requestId = "req-123";      // ✅ Type-safe
+signal.meta.userId = "user-456";         // ✅ Type-safe
+signal.meta.attemptNumber = 1;           // ✅ Type-safe
+signal.meta.maxRetries = 3;              // ✅ Type-safe
+// signal.meta.invalidField = "test";    // ❌ Type error
+
+// Works with static methods too
+const resolved = asyncSignal.resolve<string, RequestMetadata>("success");
+resolved.meta.requestId = "req-456";     // ✅ Type-safe
+
+const rejected = asyncSignal.reject<string, RequestMetadata>("error");
+rejected.meta.attemptNumber = 2;         // ✅ Type-safe
 ```
 
 ### Signal Reset
@@ -334,13 +405,13 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 ### asyncSignal()
 
 ```typescript
-function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
+function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(options?: AsyncSignalOptions): IAsyncSignal<T, M>;
 ```
 
 **Static Methods:**
 
-- `asyncSignal.resolve<T>(result?: T): IAsyncSignal<T>` - Create a pre-resolved signal
-- `asyncSignal.reject<T>(error?: Error | string): IAsyncSignal<T>` - Create a pre-rejected signal
+- `asyncSignal.resolve<T, M>(result?: T): IAsyncSignal<T, M>` - Create a pre-resolved signal
+- `asyncSignal.reject<T, M>(error?: Error | string): IAsyncSignal<T, M>` - Create a pre-rejected signal
 
 **Parameters:**
 
@@ -359,7 +430,7 @@ function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
 ### IAsyncSignal Interface
 
 ```typescript
-interface IAsyncSignal<T = any> {
+interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
     (timeout?: number, returns?: T): Promise<T>;
     id: number;
     reset(): void;
@@ -380,6 +451,8 @@ interface IAsyncSignal<T = any> {
 
 - `result` - The resolved value (undefined if not resolved or rejected)
 - `error` - The rejected error (undefined if not rejected or resolved)
+- `timestamp` - The timestamp (milliseconds since epoch) when the signal was fulfilled, rejected, or aborted. Returns 0 if the signal is still pending.
+- `meta` - A metadata object for storing custom data. Persists across reset/destroy operations.
 
 **Accessing Results:**
 

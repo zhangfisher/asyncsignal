@@ -8,6 +8,8 @@
 
 - **信号控制**：创建可手动 resolve 或 reject 的可复用异步信号
 - **静态方法**：使用 `asyncSignal.resolve()` 和 `asyncSignal.reject()` 创建预解析或预拒绝的信号
+- **时间戳跟踪**：自动记录信号被完成、拒绝或中止时的时间戳
+- **元数据存储**：内置元数据对象，用于存储自定义数据和追踪信息
 - **超时支持**：为异步操作内置超时功能
 - **约束函数**：添加条件逻辑来控制信号何时可以 resolve
 - **中止支持**：与 AbortController 原生集成，支持取消操作
@@ -140,12 +142,14 @@ await signal();
 
 console.log(signal.result); // '成功'
 console.log(signal.error); // undefined
+console.log(signal.timestamp); // 1234567890 - 信号完成时的时间戳
 
 // Reject 并访问错误
 signal.reject(new Error("失败"));
 
 console.log(signal.result); // undefined
 console.log(signal.error); // Error: 失败
+console.log(signal.timestamp); // 1234567891 - 信号被拒绝时的时间戳
 
 // 无需等待即可访问
 const signal2 = asyncSignal<number>();
@@ -153,6 +157,73 @@ signal2.resolve(42);
 
 console.log(signal2.result); // 42 - 立即可用
 console.log(signal2.error); // undefined
+console.log(signal2.timestamp); // 1234567892 - 信号完成时的时间戳
+
+// 等待中的信号时间戳为 0
+const signal3 = asyncSignal();
+console.log(signal3.timestamp); // 0 - 尚未完成或被拒绝
+```
+
+### 元数据存储
+
+每个信号都有一个 `meta` 对象用于存储自定义元数据：
+
+```typescript
+const signal = asyncSignal();
+
+// 存储自定义数据
+signal.meta.userId = "12345";
+signal.meta.requestId = "abc-123";
+signal.meta.attempts = 1;
+signal.meta.tags = ["重要", "紧急"];
+
+// 追踪生命周期事件
+signal.meta.createdAt = Date.now();
+signal.meta.status = "等待中";
+
+signal.resolve("成功");
+await signal();
+
+signal.meta.status = "已完成";
+signal.meta.completedAt = signal.timestamp;
+
+// 元数据在 reset 时保留
+signal.reset();
+console.log(signal.meta.userId); // "12345" - 仍然可用
+console.log(signal.meta.attempts); // 1 - 被保留
+
+// 更新以进行重试
+signal.meta.attempts = 2;
+```
+
+**类型安全的元数据（使用泛型）：**
+
+您可以使用第二个泛型参数为元数据指定类型：
+
+```typescript
+interface RequestMetadata {
+    requestId: string;
+    userId: string;
+    attemptNumber: number;
+    maxRetries: number;
+}
+
+// 创建具有类型化元数据的信号
+const signal = asyncSignal<string, RequestMetadata>();
+
+// TypeScript 现在知道 meta 的确切类型
+signal.meta.requestId = "req-123";      // ✅ 类型安全
+signal.meta.userId = "user-456";         // ✅ 类型安全
+signal.meta.attemptNumber = 1;           // ✅ 类型安全
+signal.meta.maxRetries = 3;              // ✅ 类型安全
+// signal.meta.invalidField = "test";    // ❌ 类型错误
+
+// 也适用于静态方法
+const resolved = asyncSignal.resolve<string, RequestMetadata>("成功");
+resolved.meta.requestId = "req-456";     // ✅ 类型安全
+
+const rejected = asyncSignal.reject<string, RequestMetadata>("错误");
+rejected.meta.attemptNumber = 2;         // ✅ 类型安全
 ```
 
 ### 信号重置
@@ -336,13 +407,13 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
 ### asyncSignal()
 
 ```typescript
-function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
+function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(options?: AsyncSignalOptions): IAsyncSignal<T, M>;
 ```
 
 **静态方法：**
 
-- `asyncSignal.resolve<T>(result?: T): IAsyncSignal<T>` - 创建一个已解析的信号
-- `asyncSignal.reject<T>(error?: Error | string): IAsyncSignal<T>` - 创建一个已拒绝的信号
+- `asyncSignal.resolve<T, M>(result?: T): IAsyncSignal<T, M>` - 创建一个已解析的信号
+- `asyncSignal.reject<T, M>(error?: Error | string): IAsyncSignal<T, M>` - 创建一个已拒绝的信号
 
 **参数：**
 
@@ -361,6 +432,7 @@ function asyncSignal(options?: AsyncSignalOptions): IAsyncSignal;
 ### IAsyncSignal 接口
 
 ```typescript
+interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
 interface IAsyncSignal<T = any> {
     (timeout?: number, returns?: T): Promise<T>;
     id: number;
@@ -382,6 +454,8 @@ interface IAsyncSignal<T = any> {
 
 - `result` - resolve 的值（未 resolve 或 reject 时为 undefined）
 - `error` - reject 的错误信息（未 reject 或 resolve 时为 undefined）
+- `timestamp` - 信号被完成、拒绝或中止时的时间戳（毫秒，从纪元开始）。如果信号还在等待中，返回 0。
+- `meta` - 元数据对象，用于存储自定义数据。在 reset/destroy 操作后仍然保留。
 
 **访问结果示例：**
 
