@@ -1,6 +1,6 @@
 {
     "name": "asyncsignal",
-    "version": "0.0.11",
+    "version": "0.0.12",
     "description": "Reusable asynchronous signals,it's a like promisewithResolvers",
     "keywords": [
         "async.signal",
