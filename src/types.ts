@@ -1,5 +1,5 @@
 export interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
-    (timeout?: number, returns?: T): Awaited<Promise<T>>;
+    (timeout?: number, returns?: T): Promise<T>;
     id: number;
     reset(): void;
     reject(e?: Error | string): void;

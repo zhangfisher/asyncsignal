@@ -197,6 +197,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
 
             // 通知等待者
             rejectSignal(err);
+            objPromise?.catch(() => {});
         } catch {
         } finally {
             // 释放锁
@@ -235,7 +236,7 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
             resolveResult = undefined;
             rejectError = undefined;
             completionTimestamp = 0;
-        } catch (error) {
+        } catch {
             // 忽略错误
         }
     };

@@ -10,11 +10,17 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
-
+    test("应该创建已reject的信号2", async () => {
+        const signal = asyncSignal();
+        signal.reject(new Error());
+        expect(signal.isRejected()).toBeTrue();
+        expect(signal.isPending()).toBeFalse();
+        expect(signal.isFulfilled()).toBeFalse();
+    });
     test("应该能够捕获错误信息", async () => {
         const errorMessage = "发生错误";
         const signal = asyncSignal.reject(errorMessage);
@@ -37,7 +43,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -50,7 +56,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -63,7 +69,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -75,7 +81,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -106,8 +112,9 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
-            // 预期的错误
+        } catch (e: any) {
+            expect(e).toBeInstanceOf(Error);
+            expect(e.message).toBe("类型错误");
         }
     });
 
@@ -121,7 +128,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         try {
             await signal1();
             await signal2();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -137,7 +144,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await signal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
@@ -186,7 +193,7 @@ describe("asyncSignal.reject 静态方法测试", () => {
         // 捕获 Promise 以避免未捕获的 rejection
         try {
             await rejectedSignal();
-        } catch (e) {
+        } catch {
             // 预期的错误
         }
     });
