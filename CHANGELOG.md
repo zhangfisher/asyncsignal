@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.1.0
+
+### Minor Changes
+
+- 9d19358: 修复一个 reject 默认处理行为
+
 ## 0.0.12
 
 ### Patch Changes
