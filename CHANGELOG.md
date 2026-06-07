@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.1.1
+
+### Patch Changes
+
+- 66d434b: fix reject error
+
 ## 0.1.0
 
 ### Minor Changes
