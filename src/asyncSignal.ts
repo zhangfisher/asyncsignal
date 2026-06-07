@@ -194,10 +194,10 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
             if (abortController && (abortAt === "all" || abortAt === "reject")) {
                 abortController.abort();
             }
-
+            // 提供默认的错误捕获
+            objPromise?.catch(() => {});
             // 通知等待者
             rejectSignal(err);
-            objPromise?.catch(() => {});
         } catch {
         } finally {
             // 释放锁
@@ -268,39 +268,11 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     });
 
     signal.abort = () => {
-        clearTimeout(timeoutId);
-
-        // 原子化检查和锁获取
-        if (isTransitioning || !isPending || isFulfilled || isRejected) {
-            return; // 已经在转换中，或已完成，直接返回
+        // abort() 无条件触发 AbortController，不受 abortAt 限制
+        if (abortController) {
+            abortController.abort();
         }
-
-        // 立即获取锁
-        isTransitioning = true;
-
-        // 原子化设置过程状态和结果状态（abort 是一种 reject）
-        isPending = false; // 结束过程
-        isFulfilled = false; // 明确非成功
-        isRejected = true; // 设置失败结果
-
-        try {
-            // 执行副作用
-            if (abortController) {
-                abortController.abort();
-                abortController = null;
-            }
-
-            rejectError = new AbortError();
-            resolveResult = undefined;
-            completionTimestamp = Date.now();
-
-            // 通知等待者
-            rejectSignal(rejectError);
-        } catch {
-        } finally {
-            // 释放锁
-            isTransitioning = false;
-        }
+        signal.reject(new AbortError());
     };
     /**
      * 获取中止信号，当 signalreject时，会自动中止
