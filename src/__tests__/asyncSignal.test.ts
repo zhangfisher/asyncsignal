@@ -28,13 +28,13 @@ describe("asyncSignal 基本功能测试", () => {
 
     test("应该在指定超时时间后resolve", async () => {
         const signal = asyncSignal();
-        const result = await signal(50);
+        const result = await signal({ timeout: 50 });
         expect(result).toBeUndefined();
     });
 
     test("超时后应该返回指定的值", async () => {
         const signal = asyncSignal();
-        const result = await signal(50, "超时结果");
+        const result = await signal({ timeout: 50, returns: "超时结果" });
         expect(result).toBe("超时结果");
     });
 
@@ -124,7 +124,7 @@ describe("asyncSignal 基本功能测试", () => {
 
     test("手动resolve应该取消超时", async () => {
         const signal = asyncSignal();
-        const promise = signal(1000);
+        const promise = signal({ timeout: 1000 });
         setTimeout(() => signal.resolve("手动"), 10);
         const result = await promise;
         expect(result).toBe("手动");

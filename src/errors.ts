@@ -9,8 +9,8 @@
  *  //
  *  然后在需要等待的地方
  *  await signal()
- *  await signal(100)  代表信号会自动超时resolve
- *  await signal(100,new Error())  代表信号会自动超时reject
+ *  await signal({timeout:100})  代表信号会自动超时resolve
+ *  await signal({timeout:100,returns:new Error()})  代表信号会自动超时reject
  *
  *  可以手动resolve或reject该signal
  *  当要结束等待时调用 signal.resolve()

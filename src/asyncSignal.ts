@@ -1,4 +1,4 @@
-import { AsyncSignalOptions, IAsyncSignal } from "./types";
+import { AsyncSignalOptions, IAsyncSignal, AsyncSignalArgs } from "./types";
 import { AbortError } from "./errors";
 
 let AsyncSignalId = 0;
@@ -8,7 +8,7 @@ let AsyncSignalId = 0;
  * const signal = asyncSignal()
  * const signal = asyncSignal({timeout:10,until:()=>x==1})
  *
- * await  signal(timeout)
+ * await  signal({timeout:10})
  * signal.resolve()
  * signal.reject()
  * signal.destroy()
@@ -23,7 +23,7 @@ let AsyncSignalId = 0;
 export function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(
     options?: AsyncSignalOptions,
 ): IAsyncSignal<T, M> {
-    const { autoReset = false, abortAt = "all", until } = options || {};
+    const { autoReset = false, abortAt = "all", until, abortSignal } = options || {};
     // 状态变量
     let isFulfilled: boolean = false, // 结果状态：成功
         isRejected: boolean = false, // 结果状态：失败
@@ -38,6 +38,8 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     let objPromise: Promise<any> | null;
     let signalId = ++AsyncSignalId;
     let abortController: AbortController | null = null;
+    // 外部 abortSignal 的 abort 监听器引用，用于触发后及 destroy 时解绑，避免内存泄漏
+    let onExternalAbort: (() => void) | null = null;
     let resolveResult: T | undefined;
     let rejectError: any;
     let completionTimestamp = 0;
@@ -63,7 +65,13 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
 
     reset();
 
-    async function signal(timeout: number = 0, returns?: any) {
+    async function signal(args?: AsyncSignalArgs) {
+        const { timeout = 0, returns, abortSignal } = args || {};
+
+        // 外部传入的 per-call abortSignal：中止时联动 abort 当前 signal（行为同构造选项 abortSignal）
+        if (abortSignal && !abortSignal.aborted) {
+            abortSignal.addEventListener("abort", () => signal.abort(), { once: true });
+        }
         // 如果until返回的true，代表不需要等待
         if (typeof until === "function" && until()) {
             isFulfilled = true;
@@ -210,6 +218,12 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
         try {
             clearTimeout(timeoutId);
 
+            // 解除外部 abortSignal 监听，避免持有 signal 闭包导致内存泄漏
+            if (onExternalAbort && abortSignal) {
+                abortSignal.removeEventListener("abort", onExternalAbort);
+                onExternalAbort = null;
+            }
+
             if (isPending) {
                 // 使用 setTimeout 确保异步执行
                 setTimeout(() => {
@@ -268,14 +282,27 @@ export function asyncSignal<T = any, M extends Record<string, any> = Record<stri
     });
 
     signal.abort = () => {
-        // abort() 无条件触发 AbortController，不受 abortAt 限制
         if (abortController) {
             abortController.abort();
         }
         signal.reject(new AbortError());
     };
+
+    // 监听外部 abortSignal，当中止时联动 abort 当前信号
+    // 外部信号在传入前已中止时，忽略（不联动、不注册监听）
+    if (abortSignal && !abortSignal.aborted) {
+        onExternalAbort = () => {
+            signal.abort();
+            if (onExternalAbort && abortSignal) {
+                abortSignal.removeEventListener("abort", onExternalAbort);
+                onExternalAbort = null;
+            }
+        };
+        abortSignal.addEventListener("abort", onExternalAbort);
+    }
+
     /**
-     * 获取中止信号，当 signalreject时，会自动中止
+     * 获取中止信号，当 signal.reject时，会自动中止
      */
     signal.getAbortSignal = () => {
         if (abortController === null) {

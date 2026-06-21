@@ -162,7 +162,7 @@ describe("竞态条件修复验证", () => {
 
     test("超时与手动resolve同时发生应该只生效一次", async () => {
         const signal = asyncSignal();
-        const promise = signal(50); // 50ms超时
+        const promise = signal({ timeout: 50 }); // 50ms超时
 
         // 在45ms时手动resolve
         setTimeout(() => signal.resolve("manual"), 45);

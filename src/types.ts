@@ -1,5 +1,5 @@
 export interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
-    (timeout?: number, returns?: T): Promise<T>;
+    (args?: AsyncSignalArgs): Promise<T>;
     id: number;
     reset(): void;
     reject(e?: Error | string): void;
@@ -31,9 +31,15 @@ export interface IAsyncSignal<T = any, M extends Record<string, any> = Record<st
 }
 
 export interface IAsyncSignalConstructor {
-    <T = any, M extends Record<string, any> = Record<string, any>>(options?: AsyncSignalOptions): IAsyncSignal<T, M>;
-    resolve<T = any, M extends Record<string, any> = Record<string, any>>(result: any): IAsyncSignal<T, M>;
-    reject<T = any, M extends Record<string, any> = Record<string, any>>(error?: Error | string): IAsyncSignal<T, M>;
+    <T = any, M extends Record<string, any> = Record<string, any>>(
+        options?: AsyncSignalOptions,
+    ): IAsyncSignal<T, M>;
+    resolve<T = any, M extends Record<string, any> = Record<string, any>>(
+        result: any,
+    ): IAsyncSignal<T, M>;
+    reject<T = any, M extends Record<string, any> = Record<string, any>>(
+        error?: Error | string,
+    ): IAsyncSignal<T, M>;
 }
 
 /**
@@ -48,5 +54,12 @@ export type AbortBehavior = "all" | "reject" | "resolve" | "none";
 export type AsyncSignalOptions = {
     autoReset?: boolean;
     abortAt?: AbortBehavior;
+    abortSignal?: AbortSignal;
     until?: () => boolean;
+};
+
+export type AsyncSignalArgs = {
+    timeout?: number;
+    abortSignal?: AbortSignal;
+    returns?: any;
 };
