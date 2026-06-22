@@ -14,6 +14,7 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 - **Constraint Functions**: Add conditional logic to control when signals can resolve
 - **Abort Support**: Native integration with AbortController for cancellation
 - **Abort Behavior Control**: Fine-grained control over when to abort AbortController
+- **External Signal Linkage**: Pass an external AbortSignal that automatically aborts the current signal when aborted
 - **Auto Reset**: Optional automatic signal reset (default: manual reset required)
 
 ## Installation
@@ -111,10 +112,10 @@ async function testError() {
 const signal = asyncSignal();
 
 // Wait with timeout (resolves after 100ms)
-await signal(100);
+await signal({ timeout: 100 });
 
 // Wait with timeout and custom error
-await signal(100, new Error("Timeout error"));
+await signal({ timeout: 100, returns: new Error("Timeout error") });
 ```
 
 ### Status Checking
@@ -326,6 +327,30 @@ abortSignal.addEventListener("abort", () => {
 // Signal will abort and cleanup on success, but not on failure
 ```
 
+### External Signal Linkage
+
+Pass an external AbortSignal via the `abortSignal` option; when the external signal aborts, the current signal is automatically aborted as well (an already-aborted signal is ignored):
+
+```typescript
+const controller = new AbortController();
+const signal = asyncSignal({ abortSignal: controller.signal });
+
+const promise = signal();
+// When the external signal aborts, the signal is aborted (rejects with an AbortError)
+controller.abort();
+```
+
+You can also pass a per-call `abortSignal` to each `signal()` invocation, behaving the same as the constructor option:
+
+```typescript
+const controller = new AbortController();
+const signal = asyncSignal();
+
+// Only this wait is controlled by controller
+await signal({ abortSignal: controller.signal });
+controller.abort(); // aborts the current signal
+```
+
 ### Abort Integration
 
 Works seamlessly with AbortController:
@@ -376,7 +401,7 @@ function waitForEvent(element: string, event: string) {
         { once: true },
     );
 
-    return signal(5000, new Error("Event timeout"));
+    return signal({ timeout: 5000, returns: new Error("Event timeout") });
 }
 
 // Wait for click event
@@ -388,7 +413,7 @@ await waitForEvent("#button", "click");
 ```typescript
 function waitForCondition(condition: () => boolean, timeout = 5000) {
     // Enable autoReset for multiple condition checks
-    const signal = asyncSignal({ until: condition, timeout, autoReset: true });
+    const signal = asyncSignal({ until: condition, autoReset: true });
 
     const interval = setInterval(() => {
         if (signal.resolve()) {
@@ -396,7 +421,7 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
         }
     }, 100);
 
-    return signal(timeout, new Error("Condition not met"));
+    return signal({ timeout, returns: new Error("Condition not met") });
 }
 ```
 
@@ -417,13 +442,13 @@ function asyncSignal<T = any, M extends Record<string, any> = Record<string, any
 
 - `options` - Configuration options
     - `until` - Optional function that must return true for resolve to succeed
-    - `timeout` - Default timeout in milliseconds (default: 0)
     - `autoReset` - Automatically reset signal after completion (default: false)
     - `abortAt` - Control when to abort AbortController (default: 'all')
         - `'all'` - Abort on resolve, reject, and reset
         - `'reject'` - Only abort on reject
         - `'resolve'` - Only abort on resolve
         - `'none'` - Never auto-abort
+    - `abortSignal` - Optional external AbortSignal that aborts the current signal when aborted (an already-aborted signal is ignored)
 
 **Returns:** `IAsyncSignal` - Signal object with methods and properties
 
@@ -431,7 +456,7 @@ function asyncSignal<T = any, M extends Record<string, any> = Record<string, any
 
 ```typescript
 interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
-    (timeout?: number, returns?: T): Promise<T>;
+    (args?: AsyncSignalArgs): Promise<T>;
     id: number;
     reset(): void;
     reject(e?: Error | string): void;

@@ -14,6 +14,7 @@
 - **约束函数**：添加条件逻辑来控制信号何时可以 resolve
 - **中止支持**：与 AbortController 原生集成，支持取消操作
 - **中止行为控制**：精确控制何时中止 AbortController
+- **外部信号联动**：支持传入外部 AbortSignal，信号中止时自动联动 abort 当前异步信号
 - **自动重置**：可选的信号自动重置功能（默认：需要手动重置）
 
 ## 安装
@@ -113,10 +114,10 @@ async function testError() {
 const signal = asyncSignal();
 
 // 带超时的等待（100ms 后自动 resolve）
-await signal(100);
+await signal({ timeout: 100 });
 
 // 带超时和自定义错误的等待
-await signal(100, new Error("Timeout error"));
+await signal({ timeout: 100, returns: new Error("Timeout error") });
 ```
 
 ### 状态检查
@@ -328,6 +329,30 @@ abortSignal.addEventListener("abort", () => {
 // 信号在成功时会中止并清理，但失败时不会
 ```
 
+### 外部信号联动
+
+通过 `abortSignal` 选项传入一个外部 AbortSignal，当外部信号中止时自动联动 abort 当前异步信号（传入已中止的信号会被忽略）：
+
+```typescript
+const controller = new AbortController();
+const signal = asyncSignal({ abortSignal: controller.signal });
+
+const promise = signal();
+// 外部中止时，signal 会被联动 abort（reject 一个 AbortError）
+controller.abort();
+```
+
+也可以在每次 `signal()` 调用时传入 per-call 的 `abortSignal`，行为与构造选项一致：
+
+```typescript
+const controller = new AbortController();
+const signal = asyncSignal();
+
+// 仅本次等待受 controller 控制
+await signal({ abortSignal: controller.signal });
+controller.abort(); // 联动 abort 当前 signal
+```
+
 ### Abort 集成
 
 与 AbortController 无缝协作：
@@ -378,7 +403,7 @@ function waitForEvent(element: string, event: string) {
         { once: true },
     );
 
-    return signal(5000, new Error("Event timeout"));
+    return signal({ timeout: 5000, returns: new Error("Event timeout") });
 }
 
 // 等待点击事件
@@ -390,7 +415,7 @@ await waitForEvent("#button", "click");
 ```typescript
 function waitForCondition(condition: () => boolean, timeout = 5000) {
     // 启用 autoReset 以进行多次条件检查
-    const signal = asyncSignal({ until: condition, timeout, autoReset: true });
+    const signal = asyncSignal({ until: condition, autoReset: true });
 
     const interval = setInterval(() => {
         if (signal.resolve()) {
@@ -398,7 +423,7 @@ function waitForCondition(condition: () => boolean, timeout = 5000) {
         }
     }, 100);
 
-    return signal(timeout, new Error("Condition not met"));
+    return signal({ timeout, returns: new Error("Condition not met") });
 }
 ```
 
@@ -419,13 +444,13 @@ function asyncSignal<T = any, M extends Record<string, any> = Record<string, any
 
 - `options` - 配置选项
     - `until` - 可选函数，必须返回 true 才能 resolve 成功
-    - `timeout` - 默认超时时间（毫秒）（默认：0）
     - `autoReset` - 完成后自动重置信号（默认：false）
     - `abortAt` - 控制何时中止 AbortController（默认：'all'）
         - `'all'` - 在 resolve、reject 和 reset 时都中止
         - `'reject'` - 仅在 reject 时中止
         - `'resolve'` - 仅在 resolve 时中止
         - `'none'` - 从不自动中止
+    - `abortSignal` - 可选的外部 AbortSignal，中止时联动 abort 当前信号（传入已中止的信号会被忽略）
 
 **返回：** `IAsyncSignal` - 包含方法和属性的信号对象
 
@@ -433,8 +458,7 @@ function asyncSignal<T = any, M extends Record<string, any> = Record<string, any
 
 ```typescript
 interface IAsyncSignal<T = any, M extends Record<string, any> = Record<string, any>> {
-interface IAsyncSignal<T = any> {
-    (timeout?: number, returns?: T): Promise<T>;
+    (args?: AsyncSignalArgs): Promise<T>;
     id: number;
     reset(): void;
     reject(e?: Error | string): void;
@@ -475,7 +499,10 @@ console.log(signal.error); // Error: 失败
 
 **方法说明：**
 
-- `signal(timeout?, returns?)` - 等待信号 resolve 或 reject
+- `signal(args?)` - 等待信号 resolve 或 reject，`args` 为 `AsyncSignalArgs` 对象：
+    - `timeout` - 超时时间（毫秒），>0 时启用超时自动结算
+    - `returns` - 超时结算值；为 Error 实例时按 reject 处理，否则按 resolve 处理
+    - `abortSignal` - 可选的外部 AbortSignal，中止时联动 abort 当前 signal
 - `id` - 信号的唯一标识符
 - `reset()` - 重置信号以便复用
 - `reject(e?)` - Reject 信号
