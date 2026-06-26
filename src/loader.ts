@@ -23,6 +23,7 @@
  */
 
 import { asyncSignal } from "./asyncSignal";
+import { IStoreage, MapStorage } from "./storeage";
 import { AsyncSignalArgs, IAsyncSignal } from "./types";
 import { getId, mergeAbortSignal } from "./utils";
 
@@ -57,6 +58,7 @@ export type AsyncLoaderOptions = {
      * 每次重试前的等待毫秒数，默认 0（立即重试）
      */
     retryDelay?: number;
+    storeage?:IStoreage
 };
 /**
  * 缓存项基础结构
@@ -69,7 +71,6 @@ export type AsyncLoaderArgs = { abortSignal: AbortSignal };
 export type IAsyncLoader<T = any> = (args: AsyncLoaderArgs) => Promise<T>;
 
 export class AsyncLoader<T = any> {
-    static cache: Map<string, CacheItem<any>> = new Map();
     options: AsyncLoaderOptions;
     loading: boolean = false;
     signal: IAsyncSignal<T>;
@@ -85,6 +86,7 @@ export class AsyncLoader<T = any> {
                 cache: 0,
                 retry: 0,
                 retryDelay: 0,
+                storage:MapStorage
             },
             options,
         );
@@ -95,6 +97,9 @@ export class AsyncLoader<T = any> {
         }
         this.signal = asyncSignal<T>();
         if (this.options.autostart) this.load();
+    }
+    get storage(){
+        return this.options.storeage!
     }
     load(): void {
         if (this.loading) return;
@@ -173,7 +178,7 @@ export class AsyncLoader<T = any> {
     }
     private _setCacheItem(data: T) {
         if (this._useCache()) {
-            AsyncLoader.cache.set(this.options.cacheKey!, {
+            this.storage.set(this.options.cacheKey!, {
                 value: data,
                 timestamp: Date.now(),
             });
@@ -181,11 +186,11 @@ export class AsyncLoader<T = any> {
     }
     private _getCacheItem(): CacheItem<T> | undefined {
         if (!this._useCache()) return undefined;
-        const item = AsyncLoader.cache.get(this.options.cacheKey!);
+        const item = this.storage.get(this.options.cacheKey!);
         if (!item) return undefined;
         // 过期则删除并视为失效
         if (Date.now() - item.timestamp > this.options.cache!) {
-            AsyncLoader.cache.delete(this.options.cacheKey!);
+            this.storage.delete(this.options.cacheKey!);
             return undefined;
         }
         return item;
@@ -226,13 +231,13 @@ export class AsyncLoader<T = any> {
      */
     clear() {
         if (this._useCache() && this.options.cacheKey) {
-            AsyncLoader.cache.delete(this.options.cacheKey);
+            this.storage.delete(this.options.cacheKey);
         }
     }
     /**
      * 清空所有缓存项
      */
-    static clearAll() {
-        AsyncLoader.cache.clear();
+    clearAll() {
+        this.storage.clear();
     }
 }
