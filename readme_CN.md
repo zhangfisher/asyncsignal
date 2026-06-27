@@ -514,6 +514,125 @@ console.log(signal.error); // Error: 失败
 - `abort()` - 中止信号操作
 - `getAbortSignal()` - 获取 AbortController 的 signal
 
+## AsyncLoader
+
+基于 AsyncSignal 的异步数据加载器，封装「加载 + 缓存 + 中止 + 超时 + 重试」五类能力。底层加载函数通过 `args.abortSignal` 接收合并后的中止信号，可直接传入 `fetch` 的 `signal` 选项。
+
+### 特性
+
+- **自动/懒加载**：`autostart` 默认 `true`，构造即加载；设为 `false` 时首次 `get()` 才触发
+- **缓存**：`cache>0` 时按 `hash` 缓存结果，过期后 `get()` 自动重新加载
+- **中止**：`abort()` 借内部信号链路穿透到底层请求
+- **每次尝试独立超时**：`timeout>0` 为每次尝试设置超时，超时算作可重试的失败
+- **失败自动重试**：`retry>0` 对超时与业务错误自动重试；主动 abort 不重试
+
+### 基本用法
+
+```typescript
+import { AsyncLoader } from "asyncsignal";
+
+// 构造函数第一个参数 loader 为底层加载函数
+const loader = new AsyncLoader((args) =>
+    fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json())
+);
+
+const data = await loader.get();  // 获取结果（命中有效缓存则直接返回）
+loader.abort();                    // 中止加载
+```
+
+### 构造选项（AsyncLoaderOptions）
+
+| 选项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `autostart` | `boolean` | `true` | 是否构造时自动加载；设为 `false` 改为首次 `get()` 懒触发 |
+| `cache` | `number` | `0` | 缓存有效期（毫秒）。`=0` 不缓存，`>0` 为有效期 |
+| `hash` | `string` | 自动生成 | 加载任务的唯一标识（hash），兼作缓存键；`cache>0` 但未提供时自动生成实例级 hash |
+| `abortSignal` | `AbortSignal` | — | 外部中止信号，触发时联动中止加载（且不会触发重试） |
+| `timeout` | `number` | — | 每次尝试的超时（毫秒），`>0` 生效；超时视为一次可重试的失败 |
+| `retry` | `number` | `0` | 失败后的最大重试次数。主动 abort 不重试，超时与业务错误会重试 |
+| `retryDelay` | `number` | `0` | 每次重试前的等待毫秒数 |
+| `onBeforeLoad` | `() => void` | — | 加载开始前调用（仅实际加载时，缓存命中不触发）；回调内抛错会被忽略 |
+| `onAfterLoad` | `(result?, error?) => void` | — | 加载结束后调用（成功带 `result`，失败/中止带 `error`），缓存命中不触发；回调内抛错会被忽略 |
+
+### 缓存
+
+启用缓存后，相同 `hash` 的结果在有效期内复用，过期后自动重新加载：
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json()),
+    { cache: 60_000, hash: "data" }   // 缓存 60 秒
+);
+
+await loader.get();  // 首次加载并写入缓存
+await loader.get();  // 命中缓存，不调用底层
+
+loader.clear();         // 清除当前实例缓存
+AsyncLoader.clearAll(); // 清除所有缓存
+```
+
+### 中止与超时
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }),
+    { timeout: 5_000 }   // 每次尝试 5 秒超时
+);
+
+loader.abort();  // 中止正在进行的请求，穿透到底层 fetch
+```
+
+超时与主动中止的错误类型不同：
+- **超时**最终失败（重试耗尽或未启用重试）→ reject `TimeoutError`；
+- **主动 `abort()` / 外部 `abortSignal`** → reject `AbortError`；
+- 业务错误 → 透传原始错误。
+
+### 重试
+
+`retry` 对超时和业务失败自动重试；主动 abort（`abort()` 或外部 `abortSignal`）不会重试：
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }),
+    {
+        timeout: 5_000,     // 每次尝试 5 秒
+        retry: 3,           // 最多重试 3 次（总共最多 4 次尝试）
+        retryDelay: 1_000,  // 每次重试前等待 1 秒
+    }
+);
+```
+
+### API 参考
+
+**构造函数：**
+
+```typescript
+new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: AsyncLoaderOptions)
+```
+
+**实例方法：**
+
+| 方法 | 说明 |
+| --- | --- |
+| `get(args?)` | 获取加载结果；首次/缓存失效/上次失败时自动触发加载。`args` 透传给内部 signal（`timeout` 为等待超时，与 `options.timeout` 加载超时语义不同） |
+| `load()` | 触发一次加载（通常无需手动调用，`get()` 会自动触发） |
+| `abort()` | 中止加载，穿透到底层请求；处于重试等待中时一并终止 |
+| `clear()` | 清除当前实例的缓存项 |
+
+**静态方法：**
+
+| 方法 | 说明 |
+| --- | --- |
+| `AsyncLoader.clearAll()` | 清除所有实例共享的全部缓存项 |
+
+**实例属性：**
+
+| 属性 | 说明 |
+| --- | --- |
+| `signal` | 内部承载结果的 `IAsyncSignal`，可观察状态与 `result` / `error` |
+| `loading` | 是否正在加载（含重试过程） |
+| `options` | 合并默认值后的构造选项 |
+
 ## 开源项目
 
 以下项目使用了 AsyncSignal：

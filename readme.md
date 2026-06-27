@@ -495,6 +495,125 @@ console.log(signal.result); // undefined
 console.log(signal.error); // Error: failed
 ```
 
+## AsyncLoader
+
+An async data loader built on AsyncSignal, encapsulating five capabilities: **loading + caching + abort + timeout + retry**. The loader function receives a merged abort signal via `args.abortSignal`, which can be passed directly to `fetch`'s `signal` option.
+
+### Features
+
+- **Auto/Lazy loading**: `autostart` defaults to `true` (load on construction); set to `false` to trigger on first `get()`
+- **Caching**: When `cache>0`, results are cached by `hash`; `get()` auto-reloads after expiry
+- **Abort**: `abort()` penetrates to the underlying request via the internal signal
+- **Per-attempt timeout**: `timeout>0` sets a timeout for each attempt; a timeout counts as a retryable failure
+- **Auto retry**: `retry>0` auto-retries on timeout and business errors; manual abort does not retry
+
+### Basic Usage
+
+```typescript
+import { AsyncLoader } from "asyncsignal";
+
+// The first constructor argument is the underlying loader function
+const loader = new AsyncLoader((args) =>
+    fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json())
+);
+
+const data = await loader.get();  // get the result (returns cached value if fresh)
+loader.abort();                    // abort loading
+```
+
+### Options (AsyncLoaderOptions)
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `autostart` | `boolean` | `true` | Whether to start loading on construction; set to `false` for lazy loading on first `get()` |
+| `cache` | `number` | `0` | Cache TTL in ms. `=0` disables caching, `>0` sets the TTL |
+| `hash` | `string` | auto-generated | Unique hash identifying the load task, also used as cache key; auto-generated per instance when `cache>0` but not provided |
+| `abortSignal` | `AbortSignal` | — | External abort signal; aborts loading when triggered (and does not trigger retry) |
+| `timeout` | `number` | — | Per-attempt timeout in ms, effective when `>0`; a timeout counts as a retryable failure |
+| `retry` | `number` | `0` | Max retry count on failure. Manual abort does not retry; timeout and business errors do |
+| `retryDelay` | `number` | `0` | Milliseconds to wait before each retry |
+| `onBeforeLoad` | `() => void` | — | Called before loading starts (only on actual loads, not cache hits); errors thrown inside are ignored |
+| `onAfterLoad` | `(result?, error?) => void` | — | Called after loading ends (success yields `result`, failure/abort yields `error`), not on cache hits; errors thrown inside are ignored |
+
+### Caching
+
+When caching is enabled, results with the same `hash` are reused within the TTL and auto-reloaded after expiry:
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json()),
+    { cache: 60_000, hash: "data" }   // cache for 60 seconds
+);
+
+await loader.get();  // first load, writes to cache
+await loader.get();  // cache hit, underlying not called
+
+loader.clear();         // clear current instance's cache
+AsyncLoader.clearAll(); // clear all cache entries
+```
+
+### Abort & Timeout
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }),
+    { timeout: 5_000 }   // 5-second timeout per attempt
+);
+
+loader.abort();  // abort the in-flight request, penetrating to fetch
+```
+
+Timeout and manual abort produce different error types:
+- **Timeout** final failure (retries exhausted or retry disabled) → rejects with `TimeoutError`;
+- **Manual `abort()` / external `abortSignal`** → rejects with `AbortError`;
+- Business errors → the original error is propagated as-is.
+
+### Retry
+
+`retry` auto-retries on timeout and business failures; manual abort (`abort()` or external `abortSignal`) does not retry:
+
+```typescript
+const loader = new AsyncLoader(
+    (args) => fetch("/api/data", { signal: args.abortSignal }),
+    {
+        timeout: 5_000,     // 5 seconds per attempt
+        retry: 3,           // up to 3 retries (4 attempts total)
+        retryDelay: 1_000,  // wait 1 second before each retry
+    }
+);
+```
+
+### API Reference
+
+**Constructor:**
+
+```typescript
+new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: AsyncLoaderOptions)
+```
+
+**Instance methods:**
+
+| Method | Description |
+| --- | --- |
+| `get(args?)` | Get the result; auto-triggers loading on first call / cache stale / last failure. `args` is forwarded to the internal signal (`timeout` is a wait timeout, semantically different from `options.timeout`) |
+| `load()` | Trigger a load (usually no need to call manually; `get()` triggers it automatically) |
+| `abort()` | Abort loading, penetrating to the underlying request; also terminates any pending retry wait |
+| `clear()` | Clear the current instance's cache entry |
+
+**Static methods:**
+
+| Method | Description |
+| --- | --- |
+| `AsyncLoader.clearAll()` | Clear all cache entries shared across instances |
+
+**Instance properties:**
+
+| Property | Description |
+| --- | --- |
+| `signal` | The internal `IAsyncSignal` carrying the result; observe its state and `result` / `error` |
+| `loading` | Whether a load (including retries) is in progress |
+| `options` | The merged constructor options |
+
 ## Open Source Projects
 
 - [VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)

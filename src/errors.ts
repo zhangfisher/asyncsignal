@@ -27,7 +27,9 @@
  *
  */
 
-
 export class AbortError extends Error {
     name: string = "AbortError";
+}
+export class TimeoutError extends Error {
+    name: string = "TimeoutError";
 }

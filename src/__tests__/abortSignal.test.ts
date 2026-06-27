@@ -11,7 +11,7 @@ describe("asyncSignal abortSignal 选项测试", () => {
             const promise = signal();
             external.abort();
 
-            await expect(promise).rejects.toBeInstanceOf(AbortError);
+            expect(promise).rejects.toBeInstanceOf(AbortError);
         });
 
         test("外部 abortSignal 中止时，signal 应进入 rejected 状态", async () => {
@@ -143,7 +143,7 @@ describe("asyncSignal abortSignal 选项测试", () => {
             // signal() 为 async function，返回的是包装后的 promise，与内部 objPromise
             // 并非同一对象。用 Promise.all 同时为 p1/p2 附加 handler，避免逐个 await 时
             // 另一个包装 promise 被 abort 触发 reject 后被判定为 unhandled rejection
-            await expect(Promise.all([p1, p2])).rejects.toBeInstanceOf(AbortError);
+            expect(Promise.all([p1, p2])).rejects.toBeInstanceOf(AbortError);
 
             expect(s1.isRejected()).toBeTrue();
             expect(s2.isRejected()).toBeTrue();
@@ -158,7 +158,7 @@ describe("asyncSignal abortSignal 选项测试", () => {
             const promise = signal({ abortSignal: external.signal });
             external.abort();
 
-            await expect(promise).rejects.toBeInstanceOf(AbortError);
+            expect(promise).rejects.toBeInstanceOf(AbortError);
             expect(signal.isRejected()).toBeTrue();
             expect(signal.error).toBeInstanceOf(AbortError);
         });
