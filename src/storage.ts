@@ -1,4 +1,4 @@
-export type IStoreage<T = any> = {
+export type IStorage<T = any> = {
     get: (key: string) => T | undefined;
     set: (key: string, value: T) => void;
     delete: (key: string) => void;

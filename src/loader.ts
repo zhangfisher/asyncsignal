@@ -1,7 +1,7 @@
 /// <reference lib="es2021.weakref" />
 import { asyncSignal } from "./asyncSignal";
 import { TimeoutError } from "./errors";
-import { IStoreage, MapStorage } from "./storeage";
+import { IStorage, MapStorage } from "./storage";
 import { AsyncSignalArgs, IAsyncSignal } from "./types";
 import { getFunctionHash, mergeAbortSignal, safeCall } from "./utils";
 
@@ -56,7 +56,7 @@ export type AsyncLoaderOptions<T = any> = {
     /**
      * 用于保存缓存数据
      */
-    storage?: IStoreage;
+    storage?: IStorage;
     /**
      * 复用加载（基于 hash 的实例复用）
      *
@@ -349,8 +349,8 @@ export class AsyncLoader<T = any> {
 
         this.loader(args)
             .then((result) => {
+                if (timeoutId) clearTimeout(timeoutId); // 先清理定时器，避免被取代的旧回调 return 跳过导致延迟释放
                 if (token !== this._loadToken) return; // 已被新一轮 load 取代，忽略
-                if (timeoutId) clearTimeout(timeoutId);
                 this._setCacheItem(result);
                 // 先于 resolve 同步复位 loading，避免 await 续行早于清理导致防重入误判
                 this.loading = false;
@@ -359,8 +359,8 @@ export class AsyncLoader<T = any> {
                 safeCall(this.options.onAfterLoad, result);
             })
             .catch((e: any) => {
+                if (timeoutId) clearTimeout(timeoutId); // 先清理定时器，避免被取代的旧回调 return 跳过导致延迟释放
                 if (token !== this._loadToken) return; // 已被新一轮 load 取代，忽略（含重试逻辑）
-                if (timeoutId) clearTimeout(timeoutId);
                 const maxRetry = this.options.retry ?? 0;
                 // 还有重试机会且非主动中止：安排重试
                 if (attempt < maxRetry && !userAbortSignal.aborted) {
@@ -448,6 +448,39 @@ export class AsyncLoader<T = any> {
         if (!this.loading && (!this.signal.isFulfilled() || cacheStale)) {
             this.load();
         }
+        return this.signal(args);
+    }
+    /**
+     * 标记当前实例数据失效：清除缓存项并重置已完成的信号状态。
+     *
+     * - 不立即触发加载，下次 `get()` 会因信号未完成而重新加载；
+     * - 正在加载中时仅清缓存（当前加载完成会写回，主要用于非加载态）；
+     * - 与 {@link AsyncLoader.clear} 区别：`clear()` 仅删 data cache，`cache=0`（无缓存）时无效；
+     *   `invalidate()` 额外 reset signal，**无缓存场景下也能保证下次 `get()` 重新加载**。
+     */
+    invalidate(): void {
+        this.clear();
+        // 仅在非加载且已结束时 reset：避免丢弃正在进行中的 pending awaiter
+        if (!this.loading && (this.signal.isFulfilled() || this.signal.isRejected())) {
+            this.signal.reset();
+        }
+    }
+    /**
+     * 强制重新加载并返回结果，忽略当前有效的缓存。
+     *
+     * - 若正在加载中，先中止当前 inflight 再重启（语义同 `multiplex="restart"`）；
+     *   注意：此时其他并发 `get()` 的 awaiter 会收到 `AbortError`（与 restart 一致）。
+     * - 清除 data cache 防止 `load()` 命中短路，确保真正发起底层请求；
+     * - 返回 `Promise<T>`，调用方可 `await loader.refresh()` 拿到最新结果。
+     *
+     * @param args 透传给内部 signal（同 {@link AsyncLoader.get}）
+     */
+    refresh(args?: AsyncSignalArgs): Promise<T> {
+        if (this.loading) {
+            this.abort(); // 中止 inflight：同步复位 loading + reject 旧 signal
+        }
+        this.clear(); // 清 data cache，防 load() 缓存命中短路
+        this.load(); // loading 已 false，必通过防重入；内部 reset signal + 重新加载
         return this.signal(args);
     }
     /**

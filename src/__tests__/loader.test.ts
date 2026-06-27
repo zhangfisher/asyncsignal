@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { AbortError, TimeoutError } from "../errors";
 import { AsyncLoader, AsyncLoaderArgs } from "../loader";
-import { MapStorage } from "../storeage";
+import { MapStorage } from "../storage";
 
 /**
  * 构造一个可中止的 loader：返回在 delay 后 resolve(value) 的 Promise，
@@ -744,11 +744,21 @@ describe("AsyncLoader multiplex", () => {
 
     test("重试期间仍 inflight：mp=2 命中同实例", async () => {
         const { fn } = createFailingLoader(99, "ok", 5); // 持续失败
-        const l1 = new AsyncLoader(fn, { hash: "rt", multiplex: "share", retry: 5, retryDelay: 200 });
+        const l1 = new AsyncLoader(fn, {
+            hash: "rt",
+            multiplex: "share",
+            retry: 5,
+            retryDelay: 200,
+        });
         await delay(20); // 进入重试等待
         expect(l1.loading).toBeTrue();
 
-        const l2 = new AsyncLoader(fn, { hash: "rt", multiplex: "share", retry: 5, retryDelay: 200 });
+        const l2 = new AsyncLoader(fn, {
+            hash: "rt",
+            multiplex: "share",
+            retry: 5,
+            retryDelay: 200,
+        });
         expect(l2).toBe(l1); // 重试不移除，命中
         l1.abort(); // 清理，避免悬空重试
     });
@@ -803,7 +813,11 @@ describe("AsyncLoader multiplex", () => {
 
     test("multiplex>0 显式 hash 优先于自动生成", () => {
         const a = createLoader("v", 10);
-        const l1 = new AsyncLoader(a.fn, { multiplex: "restart", hash: "manual", autostart: false });
+        const l1 = new AsyncLoader(a.fn, {
+            multiplex: "restart",
+            hash: "manual",
+            autostart: false,
+        });
         expect(l1.options.hash).toBe("manual");
     });
 
@@ -915,7 +929,11 @@ describe("AsyncLoader defaultValue 兜底", () => {
 
     test("超时 + defaultValue：吞错 resolve 默认值（非 TimeoutError）", async () => {
         const { fn } = createTimeoutLoader();
-        const loader = new AsyncLoader(fn, { autostart: false, timeout: 30, defaultValue: "fallback" });
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            timeout: 30,
+            defaultValue: "fallback",
+        });
         const result = await loader.get();
         expect(result).toBe("fallback");
         expect(loader.signal.isFulfilled()).toBeTrue();
@@ -964,9 +982,117 @@ describe("AsyncLoader defaultValue 兜底", () => {
 
     test("重试耗尽 + defaultValue：重试后兜底", async () => {
         const { fn, getCalls } = createFailingLoader(99, "ok", 10);
-        const loader = new AsyncLoader(fn, { autostart: false, retry: 1, defaultValue: "fallback" });
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            retry: 1,
+            defaultValue: "fallback",
+        });
         const result = await loader.get();
         expect(result).toBe("fallback");
         expect(getCalls()).toBe(2); // 初始 + 1 次重试
+    });
+});
+
+describe("AsyncLoader refresh/invalidate", () => {
+    test("refresh 忽略有效缓存强制重载（且可 await）", async () => {
+        const first = createLoader("old", 10);
+        const loader1 = new AsyncLoader(first.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "refresh-hit",
+        });
+        await loader1.get();
+        expect(first.getCalls()).toBe(1);
+
+        // 同 hash 新实例：get 命中缓存返回旧值，不调用底层
+        const second = createLoader("new", 10);
+        const loader2 = new AsyncLoader<string>(second.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "refresh-hit",
+        });
+        const cached = await loader2.get();
+        expect(cached).toBe("old");
+        expect(second.getCalls()).toBe(0);
+
+        // refresh 清缓存并强制重载：拿到新值
+        const r = await loader2.refresh();
+        expect(r).toBe("new");
+        expect(second.getCalls()).toBe(1);
+    });
+
+    test("refresh 进行中加载：中止 inflight 后重启拿新值", async () => {
+        const first = createLoader("old", 100); // 慢加载
+        const loader = new AsyncLoader(first.fn, {
+            autostart: false,
+            hash: "refresh-inflight",
+        });
+        loader.load(); // 发起慢加载
+        await delay(5);
+
+        // 替换为快的新 loader 函数后 refresh：旧 inflight 被 abort，重新加载拿新值
+        const second = createLoader("new", 10);
+        loader.loader = second.fn;
+        const r = await loader.refresh();
+        expect(r).toBe("new");
+        expect(second.getCalls()).toBe(1);
+    });
+
+    test("invalidate 后下次 get 重新加载（有缓存）", async () => {
+        const first = createLoader("old", 10);
+        const loader1 = new AsyncLoader(first.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "inv-cache",
+        });
+        await loader1.get();
+
+        const second = createLoader("new", 10);
+        const loader2 = new AsyncLoader<string>(second.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "inv-cache",
+        });
+        loader2.invalidate();
+        expect(loader2.loading).toBe(false); // 仅标记失效，不立即触发加载
+
+        const r = await loader2.get();
+        expect(r).toBe("new"); // 缓存被清，重新加载
+        expect(second.getCalls()).toBe(1);
+    });
+
+    test("invalidate 无缓存场景：下次 get 强制重载（clear 无法做到）", async () => {
+        let val = "old";
+        let calls = 0;
+        const fn = (args: AsyncLoaderArgs) => {
+            calls++;
+            const cur = val;
+            return new Promise<string>((resolve, reject) => {
+                const t = setTimeout(() => resolve(cur), 10);
+                args.abortSignal.addEventListener("abort", () => {
+                    clearTimeout(t);
+                    reject(new AbortError());
+                });
+            });
+        };
+        const loader = new AsyncLoader<string>(fn, { autostart: false }); // cache=0
+
+        expect(await loader.get()).toBe("old");
+        expect(calls).toBe(1);
+
+        // 无缓存时 get 直接返回已完成的 signal 结果，不重载
+        val = "new";
+        expect(await loader.get()).toBe("old");
+        expect(calls).toBe(1);
+
+        // clear() 在 cache=0 时无效，仍不重载
+        loader.clear();
+        expect(await loader.get()).toBe("old");
+        expect(calls).toBe(1);
+
+        // invalidate() reset signal → 下次 get 重新加载（核心价值）
+        loader.invalidate();
+        expect(await loader.get()).toBe("new");
+        expect(calls).toBe(2);
     });
 });
