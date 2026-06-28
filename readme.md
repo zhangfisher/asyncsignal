@@ -4,6 +4,24 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 
 [中文](./readme_CN.md)
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [AsyncSignal](#asyncsignal)
+    - [Features](#features)
+    - [Guide](#guide)
+    - [Use Cases](#use-cases)
+    - [API Reference](#api-reference)
+    - [IAsyncSignal Interface](#iasyncsignal-interface)
+- [AsyncLoader](#asyncloader)
+    - [Features](#features-1)
+    - [Quick Start](#quick-start)
+    - [Guide](#guide-1)
+    - [API Reference](#api-reference-1)
+- [Open Source Projects](#open-source-projects)
+- [License](#license)
+
 ## Overview
 
 AsyncSignal provides two complementary building blocks for asynchronous operations:
@@ -15,7 +33,23 @@ AsyncSignal provides two complementary building blocks for asynchronous operatio
 
 Use `asyncSignal` directly for fine-grained control of an async flow; reach for `AsyncLoader` when you need a loading lifecycle, caching, retries, and deduplication around a data-fetching function.
 
-## Features
+## Installation
+
+```bash
+pnpm add asyncsignal
+# or
+npm install asyncsignal
+# or
+yarn add asyncsignal
+# or
+bun add asyncsignal
+```
+
+## AsyncSignal
+
+A reusable async signal — like `Promise.withResolvers()`, but resettable, observable, and abort-aware.
+
+### Features
 
 - **Signal Control**: Create reusable async signals that can be manually resolved or rejected
 - **Static Methods**: Create pre-resolved or pre-rejected signals with `asyncSignal.resolve()` and `asyncSignal.reject()`
@@ -28,19 +62,9 @@ Use `asyncSignal` directly for fine-grained control of an async flow; reach for 
 - **External Signal Linkage**: Pass an external AbortSignal that automatically aborts the current signal when aborted
 - **Auto Reset**: Optional automatic signal reset (default: manual reset required)
 
-## Installation
+### Guide
 
-```bash
-pnpm add asyncsignal
-# or
-npm install asyncsignal
-# or
-yarn add asyncsignal
-```
-
-## Basic Usage
-
-### Creating a Signal
+#### Creating a Signal
 
 ```typescript
 import { asyncSignal } from "asyncsignal";
@@ -48,7 +72,7 @@ import { asyncSignal } from "asyncsignal";
 // Create a basic signal
 const signal = asyncSignal();
 
-// Wait for the signal to resolve
+// Wait for the signal to resolve or reject
 await signal();
 
 // Resolve the signal
@@ -58,7 +82,7 @@ signal.resolve("resolved value");
 signal.reject(new Error("rejected error"));
 ```
 
-### Static Methods
+#### Static Methods
 
 Create pre-resolved or pre-rejected signals:
 
@@ -84,8 +108,8 @@ function fetchWithFallback(url: string) {
     const signal = asyncSignal();
 
     fetch(url)
-        .then(response => response.json())
-        .then(data => signal.resolve(data))
+        .then((response) => response.json())
+        .then((data) => signal.resolve(data))
         .catch(() => {
             // On error, use fallback value
             const fallback = asyncSignal.resolve({ error: "Failed to fetch", data: null });
@@ -117,19 +141,19 @@ async function testError() {
 }
 ```
 
-### Timeout Support
+#### Timeout Support
 
 ```typescript
 const signal = asyncSignal();
 
-// Wait with timeout (resolves after 100ms)
+// Wait with timeout (auto-resolves after 100ms)
 await signal({ timeout: 100 });
 
 // Wait with timeout and custom error
 await signal({ timeout: 100, returns: new Error("Timeout error") });
 ```
 
-### Status Checking
+#### Status Checking
 
 ```typescript
 const signal = asyncSignal();
@@ -139,7 +163,7 @@ signal.isFulfilled(); // true if resolved
 signal.isRejected(); // true if rejected
 ```
 
-### Result Access
+#### Result Access
 
 Signals provide direct access to their resolved values and rejected errors:
 
@@ -169,12 +193,12 @@ console.log(signal2.result); // 42 - immediately available
 console.log(signal2.error); // undefined
 console.log(signal2.timestamp); // 1234567892 - timestamp when fulfilled
 
-// Pending signal has timestamp of 0
+// A pending signal has timestamp of 0
 const signal3 = asyncSignal();
 console.log(signal3.timestamp); // 0 - not yet fulfilled or rejected
 ```
 
-### Metadata Storage
+#### Metadata Storage
 
 Each signal has a `meta` object for storing custom metadata:
 
@@ -222,21 +246,21 @@ interface RequestMetadata {
 const signal = asyncSignal<string, RequestMetadata>();
 
 // TypeScript now knows the exact type of meta
-signal.meta.requestId = "req-123";      // ✅ Type-safe
-signal.meta.userId = "user-456";         // ✅ Type-safe
-signal.meta.attemptNumber = 1;           // ✅ Type-safe
-signal.meta.maxRetries = 3;              // ✅ Type-safe
+signal.meta.requestId = "req-123"; // ✅ Type-safe
+signal.meta.userId = "user-456"; // ✅ Type-safe
+signal.meta.attemptNumber = 1; // ✅ Type-safe
+signal.meta.maxRetries = 3; // ✅ Type-safe
 // signal.meta.invalidField = "test";    // ❌ Type error
 
 // Works with static methods too
 const resolved = asyncSignal.resolve<string, RequestMetadata>("success");
-resolved.meta.requestId = "req-456";     // ✅ Type-safe
+resolved.meta.requestId = "req-456"; // ✅ Type-safe
 
 const rejected = asyncSignal.reject<string, RequestMetadata>("error");
-rejected.meta.attemptNumber = 2;         // ✅ Type-safe
+rejected.meta.attemptNumber = 2; // ✅ Type-safe
 ```
 
-### Signal Reset
+#### Signal Reset
 
 By default, signals need manual reset to be reused:
 
@@ -244,14 +268,12 @@ By default, signals need manual reset to be reused:
 const signal = asyncSignal();
 
 await signal(); // First use
-await signal(); // Returns same completed promise
+await signal(); // Returns the same completed promise
 signal.reset(); // Reset for reuse
 await signal(); // Can be used again
 ```
 
-## Advanced Usage
-
-### Until Functions
+#### Until Functions
 
 Add conditions that must be met before a signal can resolve:
 
@@ -260,13 +282,13 @@ let ready = false;
 const signal = asyncSignal({ until: () => ready });
 
 // This won't resolve until ready is true
-signal.resolve(); // Will be blocked until condition is met
+signal.resolve(); // Will be blocked by the condition
 
 ready = true;
-signal.resolve(); // Now it will resolve
+signal.resolve(); // Now it can resolve
 ```
 
-### Auto Reset Option
+#### Auto Reset
 
 Control whether signals automatically reset after completion. By default, `autoReset` is `false`, meaning you need to manually call `signal.reset()` to reuse the signal:
 
@@ -274,7 +296,7 @@ Control whether signals automatically reset after completion. By default, `autoR
 // With autoReset disabled (default)
 const signal1 = asyncSignal();
 await signal1(); // First use
-await signal1(); // Returns same completed promise
+await signal1(); // Returns the same completed promise
 signal1.reset(); // Must manually reset to reuse
 await signal1(); // Now can be used again
 
@@ -284,27 +306,47 @@ await signal2(); // Auto-resets after completion
 await signal2(); // Can be used again without manual reset
 ```
 
-### Abort Behavior Control
+#### Abort Behavior Control
 
-Control when the AbortController should be aborted using the `abortAt` option:
+`asyncSignal` integrates with `AbortSignal`.
 
-```typescript
-// Default: abort on resolve, reject, and reset
-const signal1 = asyncSignal({ abortAt: "all" });
+- You may pass an `AbortSignal` when creating an `asyncSignal`; when the `AbortSignal` aborts, the `asyncSignal` is automatically aborted.
 
-// Only abort on reject (useful for network requests)
-const signal2 = asyncSignal({ abortAt: "reject" });
+- Use the `abortAt` option to control the behavior of `asyncSignal` when the `AbortSignal` is aborted.
 
-// Only abort on resolve (useful for resource cleanup)
-const signal3 = asyncSignal({ abortAt: "resolve" });
+    ```typescript
+    // Default: abort on resolve, reject, and reset
+    const signal1 = asyncSignal({ abortAt: "all" });
+    const abortSignal1 = signal1.getAbortSignal();
+    abortSignal1.addEventListener("abort", () => {
+        // Fires when asyncSignal resolves, rejects, or resets
+    });
 
-// Never auto-abort (manual control)
-const signal4 = asyncSignal({ abortAt: "none" });
-```
+    // Only abort on reject (useful for network requests)
+    const signal2 = asyncSignal({ abortAt: "reject" });
+    const abortSignal2 = signal2.getAbortSignal();
+    abortSignal2.addEventListener("abort", () => {
+        // Only fires when asyncSignal rejects
+    });
 
-#### Use Cases
+    // Only abort on resolve (useful for resource cleanup)
+    const signal3 = asyncSignal({ abortAt: "resolve" });
+    const abortSignal3 = signal3.getAbortSignal();
+    abortSignal3.addEventListener("abort", () => {
+        // Only fires when asyncSignal resolves
+    });
 
-**Network Request Cancellation (abort only on errors):**
+    // Never auto-abort (manual control)
+    const signal4 = asyncSignal({ abortAt: "none" });
+    const abortSignal4 = signal4.getAbortSignal();
+    abortSignal4.addEventListener("abort", () => {
+        // Never fires
+    });
+    ```
+
+### Use Cases
+
+#### Network Request Cancellation (abort only on errors)
 
 ```typescript
 const signal = asyncSignal({ abortAt: "reject" });
@@ -313,7 +355,7 @@ const abortSignal = signal.getAbortSignal();
 async function fetchData() {
     try {
         const response = await fetch("/api/data", { signal: abortSignal! });
-        signal.resolve("Success");
+        signal.resolve("success");
         return response;
     } catch (error) {
         signal.reject(error);
@@ -322,10 +364,10 @@ async function fetchData() {
 }
 
 // On success: fetch completes, no abort
-// On error: both signal and fetch request are aborted
+// On error: both the signal and the fetch request are aborted
 ```
 
-**Resource Cleanup (abort only on success):**
+#### Resource Cleanup (abort only on success)
 
 ```typescript
 const signal = asyncSignal({ abortAt: "resolve" });
@@ -335,10 +377,10 @@ abortSignal.addEventListener("abort", () => {
     cleanupTemporaryFiles();
 });
 
-// Signal will abort and cleanup on success, but not on failure
+// The signal aborts and cleans up on success, but not on failure
 ```
 
-### External Signal Linkage
+#### External Signal Linkage
 
 Pass an external AbortSignal via the `abortSignal` option; when the external signal aborts, the current signal is automatically aborted as well (an already-aborted signal is ignored):
 
@@ -362,43 +404,7 @@ await signal({ abortSignal: controller.signal });
 controller.abort(); // aborts the current signal
 ```
 
-### Abort Integration
-
-Works seamlessly with AbortController:
-
-```typescript
-const signal = asyncSignal();
-
-// Get abort signal for fetch calls
-const abortSignal = signal.getAbortSignal();
-
-fetch("/api/data", { signal: abortSignal });
-
-// Abort will reject both the signal and fetch
-signal.abort();
-```
-
-### Signal Destruction
-
-Clean up signals and reject pending waiters:
-
-```typescript
-const signal = asyncSignal();
-
-// Signal will be rejected with AbortError
-signal.destroy();
-
-// Subsequent awaits will throw AbortError
-try {
-    await signal();
-} catch (error) {
-    console.log(error.name); // 'AbortError'
-}
-```
-
-## Real-World Examples
-
-### Manual Event Waiting
+#### Manual Event Waiting
 
 ```typescript
 function waitForEvent(element: string, event: string) {
@@ -419,32 +425,15 @@ function waitForEvent(element: string, event: string) {
 await waitForEvent("#button", "click");
 ```
 
-### Conditional Operations
+### API Reference
 
 ```typescript
-function waitForCondition(condition: () => boolean, timeout = 5000) {
-    // Enable autoReset for multiple condition checks
-    const signal = asyncSignal({ until: condition, autoReset: true });
-
-    const interval = setInterval(() => {
-        if (signal.resolve()) {
-            clearInterval(interval);
-        }
-    }, 100);
-
-    return signal({ timeout, returns: new Error("Condition not met") });
-}
+function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(
+    options?: AsyncSignalOptions,
+): IAsyncSignal<T, M>;
 ```
 
-## API Reference
-
-### asyncSignal()
-
-```typescript
-function asyncSignal<T = any, M extends Record<string, any> = Record<string, any>>(options?: AsyncSignalOptions): IAsyncSignal<T, M>;
-```
-
-**Static Methods:**
+#### Static Methods
 
 - `asyncSignal.resolve<T, M>(result?: T): IAsyncSignal<T, M>` - Create a pre-resolved signal
 - `asyncSignal.reject<T, M>(error?: Error | string): IAsyncSignal<T, M>` - Create a pre-rejected signal
@@ -506,9 +495,26 @@ console.log(signal.result); // undefined
 console.log(signal.error); // Error: failed
 ```
 
+**Methods:**
+
+- `signal(args?)` - Wait for the signal to `resolve` or `reject`; `args` is an `AsyncSignalArgs` object:
+    - `timeout` - Timeout in ms; enables auto-settlement when `>0`
+    - `returns` - Settlement value on timeout; treated as reject when an `Error` instance, otherwise as resolve
+    - `abortSignal` - Optional external `AbortSignal` that aborts the current `signal` when aborted
+- `id` - Unique identifier of the signal
+- `reset()` - Reset the signal for reuse
+- `reject(e?)` - Reject the signal
+- `resolve(result?)` - Resolve the signal
+- `destroy()` - Destroy the signal and reject pending waiters
+- `isFulfilled()` - Check whether resolved
+- `isRejected()` - Check whether rejected
+- `isPending()` - Check whether waiting
+- `abort()` - Abort the signal operation
+- `getAbortSignal()` - Get the AbortController's signal
+
 ## AsyncLoader
 
-An async data loader built on AsyncSignal, encapsulating five capabilities: **loading + caching + abort + timeout + retry**. The loader function receives a merged abort signal via `args.abortSignal`, which can be passed directly to `fetch`'s `signal` option.
+An async data loader built on top of `AsyncSignal`, encapsulating five capabilities: **loading + caching + abort + timeout + retry**. The loader function receives a merged abort signal via `args.abortSignal`, which can be passed directly to `fetch`'s `signal` option.
 
 ### Features
 
@@ -519,22 +525,29 @@ An async data loader built on AsyncSignal, encapsulating five capabilities: **lo
 - **Auto retry**: `retry>0` auto-retries on timeout and business errors; manual abort does not retry
 - **Multiplexing**: reuse loader instances by `hash` — `"off"` (independent), `"restart"` (abort the inflight load of the same hash and reload with the first loader), or `"share"` (fully share the inflight load and result)
 - **Error fallback**: `defaultValue` swallows the final failure (business error / timeout after retries exhausted) and resolves a fallback value
+- **Sync loading**: the underlying loader may return `Promise<T>` or a synchronous value `T`; a synchronous `throw` goes through the same error-handling chain as an async rejection (retry / fallback / callbacks)
+- **Loading status**: `isPending()` / `isFulfilled()` / `isRejected()` reflect the loading task's status, with an interface aligned with `asyncSignal`
 
-### Basic Usage
+### Quick Start
 
 ```typescript
 import { AsyncLoader } from "asyncsignal";
 
 // The first constructor argument is the underlying loader function
-const loader = new AsyncLoader((args) =>
-    fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json())
+const loader = new AsyncLoader(async (args) =>
+    const result = fetch("/api/data", { signal: args.abortSignal })
+    return await r.json()
 );
 
-const data = await loader.get();  // get the result (returns cached value if fresh)
-loader.abort();                    // abort loading
+const data = await loader.get(); // get the result (returns cached value if fresh)
+loader.abort(); // abort loading
 ```
 
-### Options (AsyncLoaderOptions)
+### Guide
+
+#### Options
+
+The `AsyncLoaderOptions` type:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -551,40 +564,41 @@ loader.abort();                    // abort loading
 | `onBeforeLoad` | `() => void` | — | Called before loading starts (only on actual loads, not cache hits); errors thrown inside are ignored |
 | `onAfterLoad` | `(result?, error?) => void` | — | Called after loading ends (success yields `result`, failure/abort yields `error`), not on cache hits; errors thrown inside are ignored |
 
-### Caching
+#### Caching
 
 When caching is enabled, results with the same `hash` are reused within the TTL and auto-reloaded after expiry:
 
 ```typescript
 const loader = new AsyncLoader(
     (args) => fetch("/api/data", { signal: args.abortSignal }).then((r) => r.json()),
-    { cache: 60_000, hash: "data" }   // cache for 60 seconds
+    { cache: 60_000, hash: "data" } // cache for 60 seconds
 );
 
-await loader.get();  // first load, writes to cache
-await loader.get();  // cache hit, underlying not called
+await loader.get(); // first load, writes to cache
+await loader.get(); // cache hit, underlying not called
 
-loader.clear();    // clear current instance's cache entry
+loader.clear(); // clear current instance's cache entry
 loader.clearAll(); // clear all cache entries (shared storage)
 ```
 
-### Abort & Timeout
+#### Abort & Timeout
 
 ```typescript
 const loader = new AsyncLoader(
     (args) => fetch("/api/data", { signal: args.abortSignal }),
-    { timeout: 5_000 }   // 5-second timeout per attempt
+    { timeout: 5_000 } // 5-second timeout per attempt
 );
 
-loader.abort();  // abort the in-flight request, penetrating to fetch
+loader.abort(); // abort the in-flight request, penetrating to fetch
 ```
 
 Timeout and manual abort produce different error types:
+
 - **Timeout** final failure (retries exhausted or retry disabled) → rejects with `TimeoutError`;
 - **Manual `abort()` / external `abortSignal`** → rejects with `AbortError`;
 - Business errors → the original error is propagated as-is.
 
-### Retry
+#### Retry
 
 `retry` auto-retries on timeout and business failures; manual abort (`abort()` or external `abortSignal`) does not retry:
 
@@ -592,14 +606,14 @@ Timeout and manual abort produce different error types:
 const loader = new AsyncLoader(
     (args) => fetch("/api/data", { signal: args.abortSignal }),
     {
-        timeout: 5_000,     // 5 seconds per attempt
-        retry: 3,           // up to 3 retries (4 attempts total)
-        retryDelay: 1_000,  // wait 1 second before each retry
+        timeout: 5_000, // 5 seconds per attempt
+        retry: 3, // up to 3 retries (4 attempts total)
+        retryDelay: 1_000, // wait 1 second before each retry
     }
 );
 ```
 
-### Multiplexing
+#### Multiplexing
 
 Reuse loader instances by `hash` to deduplicate concurrent or repeated loads. Effective only when `hash` is provided (or auto-generated from the loader function):
 
@@ -621,7 +635,7 @@ const b = new AsyncLoader(fnB, { hash: "req", multiplex: "restart" });
 
 > Both modes behave the same when the matched instance is pending (not yet loading) or there is no match.
 
-### Error Fallback (`defaultValue`)
+#### Default Value
 
 On final failure (business error, or timeout after retries are exhausted), providing `defaultValue` swallows the error and resolves the fallback instead:
 
@@ -635,7 +649,7 @@ const user = await loader.get(); // on failure, resolves defaultUser instead of 
 - Has **no effect** on manual `abort()` (still rejects with `AbortError`).
 - The fallback is not written to the cache, so the next `get()` reloads to fetch the real value.
 
-### Refresh & Invalidate
+#### Refresh & Invalidate
 
 `refresh()` forces a reload ignoring fresh cache; `invalidate()` marks data stale so the next `get()` reloads:
 
@@ -644,19 +658,39 @@ const loader = new AsyncLoader(fn, { cache: 60_000, hash: "data" });
 await loader.get();
 
 await loader.refresh(); // force reload now, returns the new result (aborts any inflight load)
-loader.invalidate();    // mark stale; the next get() reloads
-await loader.get();     // reloads
+loader.invalidate(); // mark stale; the next get() reloads
+await loader.get(); // reloads
 ```
 
 - `refresh(args?)`: clears the cache and reloads immediately; aborts any inflight load first. Returns the new result.
 - `invalidate()`: clears the cache entry and resets a completed signal, but does **not** trigger loading — the next `get()` does. Unlike `clear()`, it also works without a cache (`cache=0`).
+
+#### Loading Status
+
+`isPending()` / `isFulfilled()` / `isRejected()` reflect the execution status of the loading task (interface aligned with the `asyncSignal` methods of the same name):
+
+```typescript
+const loader = new AsyncLoader(fn, { autostart: false });
+
+loader.isPending(); // whether loading is in progress (including retries)
+loader.isFulfilled(); // whether the load succeeded
+loader.isRejected(); // whether the load failed (business error / timeout / abort)
+
+await loader.get();
+loader.isFulfilled(); // true
+```
+
+- `isPending()` is based on `loading`: it is only `true` while **actually loading**. When "never loaded" or after `invalidate()`, the signal is still pending but no load is in progress, so this returns `false`.
+- `isFulfilled()` is `true` when the load succeeded (including `defaultValue` fallback).
+- `isRejected()` is `true` when the load failed (business error / timeout / abort).
+- The `loading` property is also directly accessible, with the same semantics as `isPending()`.
 
 ### API Reference
 
 **Constructor:**
 
 ```typescript
-new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: AsyncLoaderOptions)
+new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T> | T, options?: AsyncLoaderOptions)
 ```
 
 **Instance methods:**
@@ -670,6 +704,9 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 | `abort()` | Abort loading, penetrating to the underlying request; also terminates any pending retry wait |
 | `clear()` | Clear the current instance's cache entry |
 | `clearAll()` | Clear all cache entries in the shared storage |
+| `isPending()` | Whether loading is in progress (including retries); based on `loading` |
+| `isFulfilled()` | Whether the load succeeded (including `defaultValue` fallback) |
+| `isRejected()` | Whether the load failed (business error / timeout / abort) |
 
 **Static methods:**
 
@@ -689,18 +726,20 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 
 ## Open Source Projects
 
-- [VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/)
-- [AutoStore](https://zhangfisher.github.io/autostore/)
-- [Logsets](https://zhangfisher.github.io/logsets/)
-- [VoerkaLogger](https://zhangfisher.github.io/voerkalogger/)
-- [FlexDecorators](https://zhangfisher.github.io/flex-decorators/)
-- [FlexState](https://zhangfisher.github.io/flexstate/)
-- [FlexTools](https://zhangfisher.github.io/flex-tools/)
-- [Styledfc](https://zhangfisher.github.io/styledfc/)
-- [json_comments_extension](https://github.com/zhangfisher/json_comments_extension)
-- [mixed-cli](https://github.com/zhangfisher/mixed-cli)
-- [flexvars](https://github.com/zhangfisher/flexvars)
-- [yald](https://github.com/zhangfisher/yald)
+The following projects use AsyncSignal:
+
+- [VoerkaI18n](https://zhangfisher.github.io/voerka-i18n/) - An all-in-one internationalization solution for React/Vue/Nodejs
+- [AutoStore](https://zhangfisher.github.io/autostore/) - Automated state management
+- [Logsets](https://zhangfisher.github.io/logsets/) - Terminal UI development toolkit
+- [VoerkaLogger](https://zhangfisher.github.io/voerkaloger/) - A simple logging library
+- [FlexDecorators](https://zhangfisher.github.io/flex-decorators/) - Decorator development toolkit
+- [FlexState](https://zhangfisher.github.io/flexstate/) - Finite state machine library
+- [FlexTools](https://zhangfisher.github.io/flex-tools/) - General-purpose utility library
+- [Styledfc](https://zhangfisher.github.io/styledfc/) - A tiny, elegant CSS-in-JS library
+- [json_comments_extension](https://github.com/zhangfisher/json_comments_extension) - A VS Code extension that adds comments to JSON files
+- [mixed-cli](https://github.com/zhangfisher/mixed-cli) - A library for building interactive CLI programs
+- [flexvars](https://github.com/zhangfisher/flexvars) - A powerful string interpolation / variable processing library
+- [yald](https://github.com/zhangfisher/yald) - A front-end link debugging helper
 
 ## License
 
