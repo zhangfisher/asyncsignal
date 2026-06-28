@@ -10,7 +10,7 @@ import { getFunctionHash, mergeAbortSignal, safeCall } from "./utils";
  *
  * @typeParam T 加载结果类型，用于 `onAfterLoad` 回调 result 参数的类型
  */
-export type AsyncLoaderOptions<T = any> = {
+export type AsyncLoaderOptions<T = any, M extends Record<string, any> = Record<string, any>> = {
     /**
      * 是否在构造时自动开始加载，默认 true。
      *
@@ -117,6 +117,7 @@ export type AsyncLoaderOptions<T = any> = {
      * 与 `loading` 由 true 变 false 对齐；重试过程不触发，仅在最终结果时触发一次。
      */
     onAfterLoad?: (result?: T, error?: any) => void;
+    meta?: M;
 };
 /**
  * 缓存项结构
@@ -174,7 +175,7 @@ export type IAsyncLoader<T = any> = (args: AsyncLoaderArgs) => Promise<T> | T;
  * @typeParam T 加载结果的类型
  * @see {@link AsyncLoaderOptions} 构造选项
  */
-export class AsyncLoader<T = any> {
+export class AsyncLoader<T = any, M extends Record<string, any> = Record<string, any>> {
     static seq: number = 0;
     /**
      * multiplex 实例缓存表（弱引用）
@@ -213,7 +214,7 @@ export class AsyncLoader<T = any> {
         AsyncLoader.loaderCache?.clear();
     }
     /** 合并默认值后的构造选项 */
-    options: AsyncLoaderOptions<T>;
+    options: AsyncLoaderOptions<T, M>;
     /** 是否正在加载（含重试过程），加载结束后复位为 false */
     loading: boolean = false;
     id: number = 0;
@@ -239,7 +240,7 @@ export class AsyncLoader<T = any> {
      */
     constructor(
         public loader: IAsyncLoader<T>,
-        options?: AsyncLoaderOptions<T>,
+        options?: AsyncLoaderOptions<T, M>,
     ) {
         this.options = Object.assign(
             {
@@ -286,6 +287,9 @@ export class AsyncLoader<T = any> {
     }
     get hash() {
         return this.options.hash;
+    }
+    get meta() {
+        return this.options.meta;
     }
     /**
      * 触发一次加载

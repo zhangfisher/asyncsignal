@@ -4,6 +4,24 @@
 
 [English](./readme.md)
 
+## 目录
+
+- [概述](#概述)
+- [安装](#安装)
+- [AsyncSignal](#asyncsignal)
+    - [特性](#特性)
+    - [指南](#指南)
+    - [使用场景](#使用场景)
+    - [API 参考](#api-参考)
+    - [IAsyncSignal 接口](#iasyncsignal-接口)
+- [AsyncLoader](#asyncloader)
+    - [特性](#特性-1)
+    - [快速入门](#快速入门)
+    - [指南](#指南-1)
+    - [API 参考](#api-参考-1)
+- [开源项目](#开源项目)
+- [许可证](#许可证)
+
 ## 概述
 
 AsyncSignal 提供两个互补的异步操作基础模块：
@@ -510,6 +528,8 @@ await signal2(); // 无需手动重置即可再次使用
   - **失败自动重试**：`retry>0` 对超时与业务错误自动重试；主动 abort 不重试
   - **实例复用（multiplex）**：按 `hash` 复用加载器实例——`"off"`（独立）、`"restart"`（中止同 `hash` 的进行中加载并以首个 loader 重新加载）、`"share"`（完全共享进行中加载与结果）
   - **错误兜底**：`defaultValue` 在最终失败（业务错误 / 重试耗尽后的超时）时吞掉错误并 resolve 兜底值
+  - **同步加载**：底层 loader 可返回 `Promise<T>` 或同步值 `T`；同步抛出的异常与异步 rejection 走同一错误处理链（重试 / 兜底 / 回调）
+  - **加载状态查询**：`isPending()` / `isFulfilled()` / `isRejected()` 反映加载任务状态，接口与 `asyncSignal` 对齐
 
   ### 快速入门
 
@@ -645,12 +665,32 @@ await signal2(); // 无需手动重置即可再次使用
   - `refresh(args?)`：清除缓存并立即重新加载；若有进行中加载先中止。返回新结果。
   - `invalidate()`：清除缓存项并重置已完成的信号，但**不立即触发加载**——由下次 `get()` 触发。与 `clear()` 不同，无缓存（`cache=0`）时也生效。
 
+  #### 加载状态
+
+  `isPending()` / `isFulfilled()` / `isRejected()` 反映加载任务的执行状态（接口与 `asyncSignal` 同名方法对齐）：
+
+  ```typescript
+  const loader = new AsyncLoader(fn, { autostart: false });
+
+  loader.isPending(); // 是否正在加载中（含重试过程）
+  loader.isFulfilled(); // 是否加载成功
+  loader.isRejected(); // 是否加载出错（业务错误 / 超时 / abort）
+
+  await loader.get();
+  loader.isFulfilled(); // true
+  ```
+
+  - `isPending()` 以 `loading` 为准：仅在**实际加载中**为 true。"从未加载"或 `invalidate()` 后虽然 signal 处于 pending，但并未在加载，故为 false。
+  - `isFulfilled()` 在加载成功（含 `defaultValue` 兜底）时为 true。
+  - `isRejected()` 在加载出错（业务错误 / 超时 / abort）时为 true。
+  - `loading` 属性亦可直接访问，语义同 `isPending()`。
+
   ### API 参考
 
   **构造函数：**
 
   ```typescript
-  new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: AsyncLoaderOptions)
+  new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T> | T, options?: AsyncLoaderOptions)
   ```
 
   **实例方法：**
@@ -664,6 +704,9 @@ await signal2(); // 无需手动重置即可再次使用
   | `abort()`        | 中止加载，穿透到底层请求；处于重试等待中时一并终止                                                                                          |
   | `clear()`        | 清除当前实例的缓存项                                                                                                                        |
   | `clearAll()`     | 清空共享存储中的全部缓存项                                                                                                                  |
+  | `isPending()`    | 是否正在加载中（含重试过程），以 `loading` 为准                                                                                            |
+  | `isFulfilled()`  | 是否加载成功（含 `defaultValue` 兜底）                                                                                                      |
+  | `isRejected()`   | 是否加载出错（业务错误 / 超时 / abort）                                                                                                     |
 
   **静态方法：**
 
