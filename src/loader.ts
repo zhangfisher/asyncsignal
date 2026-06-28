@@ -138,8 +138,10 @@ export type AsyncLoaderArgs = {
  * 底层加载函数类型
  *
  * 通过 `args.abortSignal` 接收中止信号（可直接传入 `fetch` 的 `signal` 选项）。
+ * 返回值可为 Promise 或同步值；同步 `throw` 与返回 rejected Promise 等价，
+ * 均会进入既有的重试 / defaultValue / onAfterLoad 错误处理链。
  */
-export type IAsyncLoader<T = any> = (args: AsyncLoaderArgs) => Promise<T>;
+export type IAsyncLoader<T = any> = (args: AsyncLoaderArgs) => Promise<T> | T;
 
 /**
  * 基于 {@link IAsyncSignal} 的异步数据加载器
@@ -347,7 +349,14 @@ export class AsyncLoader<T = any> {
         if (timeoutController) loaderSignals.push(timeoutController.signal);
         const args = { abortSignal: mergeAbortSignal(...loaderSignals)! } as AsyncLoaderArgs;
 
-        this.loader(args)
+        // 允许 loader 返回同步值或 Promise；同步 throw 经 Promise.reject 统一进入 catch
+        let loaderResult: Promise<T> | T;
+        try {
+            loaderResult = this.loader(args);
+        } catch (e) {
+            loaderResult = Promise.reject(e);
+        }
+        Promise.resolve(loaderResult)
             .then((result) => {
                 if (timeoutId) clearTimeout(timeoutId); // 先清理定时器，避免被取代的旧回调 return 跳过导致延迟释放
                 if (token !== this._loadToken) return; // 已被新一轮 load 取代，忽略
@@ -517,5 +526,26 @@ export class AsyncLoader<T = any> {
      */
     clearAll() {
         this.storage.clear();
+    }
+    /**
+     * 是否正在加载中（含重试过程）。加载结束（成功 / 失败 / abort / 命中缓存）后为 false。
+     *
+     * 以权威的 `loading` 字段为准，而非 `signal.isPending()`：signal 的 pending 态在
+     * "从未加载"或"invalidate 后 reset"时也为 true，但实际并未在加载。
+     */
+    isPending() {
+        return this.loading;
+    }
+    /**
+     * 加载是否成功（含 defaultValue 兜底 resolve 的成功）
+     */
+    isFulfilled() {
+        return this.signal.isFulfilled();
+    }
+    /**
+     * 加载是否出错（业务错误 / 超时 / abort）
+     */
+    isRejected() {
+        return this.signal.isRejected();
     }
 }

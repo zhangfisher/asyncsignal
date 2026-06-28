@@ -57,6 +57,33 @@ function createTimeoutLoader() {
     return { fn, getCalls: () => calls };
 }
 
+/**
+ * 构造一个返回同步值的 loader（即 IAsyncLoader 的 `Promise<T> | T` 中的 T 分支），
+ * 用于验证同步加载成功路径。
+ */
+function createSyncLoader<T>(value: T) {
+    let calls = 0;
+    const fn = (_args: AsyncLoaderArgs) => {
+        calls++;
+        return value; // 同步返回
+    };
+    return { fn, getCalls: () => calls };
+}
+
+/**
+ * 构造一个前 failTimes 次同步抛错、之后返回同步值的 loader，
+ * 用于验证同步 throw 与异步 rejection 走同一错误处理链。
+ */
+function createSyncFailingLoader(failTimes: number, value: string) {
+    let calls = 0;
+    const fn = (_args: AsyncLoaderArgs) => {
+        calls++;
+        if (calls <= failTimes) throw new Error(`sync-fail#${calls}`); // 同步抛错
+        return value;
+    };
+    return { fn, getCalls: () => calls };
+}
+
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 describe("AsyncLoader 基本加载", () => {
@@ -1169,5 +1196,212 @@ describe("AsyncLoader 加载终态后再次 get()", () => {
         expect(r).toBe("recovered");
         expect(calls).toBe(2);
         expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+});
+
+describe("AsyncLoader 同步 loader（返回 Promise<T> | T）", () => {
+    test("同步返回值：get() 拿到同步值，signal fulfilled，loading 复位", async () => {
+        const { fn, getCalls } = createSyncLoader("sync-data");
+        const loader = new AsyncLoader(fn, { autostart: false });
+        const result = await loader.get();
+        expect(result).toBe("sync-data");
+        expect(getCalls()).toBe(1);
+        expect(loader.signal.isFulfilled()).toBeTrue();
+        expect(loader.loading).toBeFalse();
+    });
+
+    test("同步返回值保持泛型类型", async () => {
+        const loader = new AsyncLoader<{ id: number }>(
+            () => ({ id: 7 }), // 同步对象
+            { autostart: false },
+        );
+        const result = await loader.get();
+        expect(result.id).toBe(7);
+    });
+
+    test("同步返回值与 cache 兼容：命中缓存不重复调用底层", async () => {
+        const first = createSyncLoader("a");
+        const loader1 = new AsyncLoader(first.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "sync-cache",
+        });
+        await loader1.get();
+        expect(first.getCalls()).toBe(1);
+
+        // 同 hash 新实例命中缓存，返回旧值且不调用底层
+        const second = createSyncLoader("b");
+        const loader2 = new AsyncLoader(second.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "sync-cache",
+        });
+        const result = await loader2.get();
+        expect(result).toBe("a");
+        expect(second.getCalls()).toBe(0);
+    });
+
+    test("同步 throw 走错误链：无 retry/defaultValue 时 reject 原错误", async () => {
+        const { fn, getCalls } = createSyncFailingLoader(99, "ok");
+        const loader = new AsyncLoader(fn, { autostart: false });
+        try {
+            await loader.get();
+            expect(false).toBeTrue(); // 不应到达
+        } catch (e) {
+            expect((e as Error).message).toBe("sync-fail#1");
+        }
+        expect(getCalls()).toBe(1);
+        expect(loader.signal.isRejected()).toBeTrue();
+        expect(loader.loading).toBeFalse();
+    });
+
+    test("同步 throw + retry：前 N 次抛错后重试成功", async () => {
+        const { fn, getCalls } = createSyncFailingLoader(2, "ok");
+        const loader = new AsyncLoader(fn, { autostart: false, retry: 2 });
+        const result = await loader.get();
+        expect(result).toBe("ok");
+        expect(getCalls()).toBe(3); // 初始 + 2 次重试
+    });
+
+    test("同步 throw + defaultValue：吞错 resolve 默认值", async () => {
+        const { fn } = createSyncFailingLoader(99, "ok");
+        const loader = new AsyncLoader(fn, { autostart: false, defaultValue: "fallback" });
+        const result = await loader.get();
+        expect(result).toBe("fallback");
+        expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+
+    test("同步 throw + onAfterLoad：触发带 error", async () => {
+        const { fn } = createSyncFailingLoader(99, "ok");
+        let afterError: any;
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            onAfterLoad: (_r, e) => {
+                afterError = e;
+            },
+        });
+        try {
+            await loader.get();
+        } catch {
+            // 预期同步失败
+        }
+        expect((afterError as Error).message).toBe("sync-fail#1");
+    });
+
+    test("同步成功后 abort 无副作用：已完成终态不被改变", async () => {
+        const { fn } = createSyncLoader("sync");
+        const loader = new AsyncLoader(fn, { autostart: false });
+        const result = await loader.get();
+        expect(result).toBe("sync");
+        loader.abort(); // 已 fulfilled，abort 不改变终态
+        expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+});
+
+describe("AsyncLoader 加载状态 isPending/isFulfilled/isRejected", () => {
+    test("未加载（autostart=false）：三态皆 false（既未在加载也无结果）", async () => {
+        const { fn } = createLoader("data", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        expect(loader.isPending()).toBeFalse();
+        expect(loader.isFulfilled()).toBeFalse();
+        expect(loader.isRejected()).toBeFalse();
+    });
+
+    test("加载中：isPending=true（与 loading 一致）", async () => {
+        const { fn } = createLoader("data", 50);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        loader.load();
+        expect(loader.isPending()).toBeTrue();
+        expect(loader.loading).toBeTrue();
+        expect(loader.isFulfilled()).toBeFalse();
+        expect(loader.isRejected()).toBeFalse();
+        await loader.get(); // 收尾，避免悬空加载
+        expect(loader.isPending()).toBeFalse();
+        expect(loader.loading).toBeFalse();
+        expect(loader.isFulfilled()).toBeTrue();
+    });
+
+    test("加载成功：isFulfilled=true，isPending=false", async () => {
+        const { fn } = createLoader("data", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        await loader.get();
+        expect(loader.isFulfilled()).toBeTrue();
+        expect(loader.isPending()).toBeFalse();
+        expect(loader.isRejected()).toBeFalse();
+    });
+
+    test("加载失败：isRejected=true，isPending=false", async () => {
+        const { fn } = createFailingLoader(99, "ok", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        try {
+            await loader.get();
+        } catch {
+            // 预期失败
+        }
+        expect(loader.isRejected()).toBeTrue();
+        expect(loader.isPending()).toBeFalse();
+        expect(loader.isFulfilled()).toBeFalse();
+        expect(loader.loading).toBeFalse();
+    });
+
+    test("重试期间：isPending 保持 true（重试属加载过程）", async () => {
+        const { fn } = createFailingLoader(2, "ok", 5);
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            retry: 2,
+            retryDelay: 30,
+        });
+        loader.load();
+        await delay(20); // 首次失败(5ms)后进入重试等待(30ms)
+        expect(loader.isPending()).toBeTrue();
+        await loader.get(); // 收尾，等重试成功
+    });
+
+    test("abort 后：isRejected=true，isPending=false", async () => {
+        const { fn } = createLoader("data", 1000);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        const promise = loader.get();
+        loader.abort();
+        try {
+            await promise;
+        } catch {
+            // 预期 AbortError
+        }
+        expect(loader.isRejected()).toBeTrue();
+        expect(loader.isPending()).toBeFalse();
+    });
+
+    test("缓存命中：isFulfilled=true，isPending=false（命中非加载）", async () => {
+        const first = createLoader("data", 10);
+        const l1 = new AsyncLoader(first.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "state-cache",
+        });
+        await l1.get();
+
+        const second = createLoader("new", 10);
+        const l2 = new AsyncLoader(second.fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "state-cache",
+        });
+        await l2.get(); // 命中缓存
+        expect(l2.isFulfilled()).toBeTrue();
+        expect(l2.isPending()).toBeFalse();
+    });
+
+    test("invalidate 后：终态清除，isPending=false（未重新加载前不视为加载中）", async () => {
+        const { fn } = createLoader("data", 10);
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            cache: 10000,
+            hash: "state-inv",
+        });
+        await loader.get();
+        expect(loader.isFulfilled()).toBeTrue();
+        loader.invalidate();
+        expect(loader.isPending()).toBeFalse(); // 仅标记失效，未立即加载
+        expect(loader.isFulfilled()).toBeFalse(); // reset 后终态清除
     });
 });
