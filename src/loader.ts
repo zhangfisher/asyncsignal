@@ -8,7 +8,7 @@ import { getFunctionHash, mergeAbortSignal, safeCall } from "./utils";
 /**
  * AsyncLoader 构造选项
  *
- * @typeParam T 加载结果类型，用于 `onAfterLoad` 回调 result 参数的类型
+ * @typeParam T 加载结果类型，用于 `onFulfilled` 回调 result 参数的类型
  */
 export type AsyncLoaderOptions<T = any, M extends Record<string, any> = Record<string, any>> = {
     /**
@@ -103,20 +103,26 @@ export type AsyncLoaderOptions<T = any, M extends Record<string, any> = Record<s
      */
     defaultValue?: T;
     /**
-     * 加载开始前调用（仅在实际发起加载时，缓存命中不触发）
+     * 加载开始时调用（仅在实际发起加载时，缓存命中不触发）
      *
-     * 围绕一次 `load()` 的完整周期，与 `loading` 由 false 变 true 对齐；重试过程不重复触发。
+     * 与 `loading` 由 false 变 true 对齐；重试过程不重复触发。
+     * 支持单个函数或函数数组，数组时逐个并发调用，任一回调抛错被忽略。
      */
-    onBeforeLoad?: () => void;
+    onPending?: (() => void) | (() => void)[];
     /**
-     * 加载结束后调用（成功或最终失败/中止时），缓存命中不触发
+     * 加载成功时调用（缓存命中不触发）
      *
-     * - 成功时 `result` 有值、`error` 为 undefined；
-     * - 失败/中止时 `result` 为 undefined、`error` 有值。
-     *
-     * 与 `loading` 由 true 变 false 对齐；重试过程不触发，仅在最终结果时触发一次。
+     * `result` 为加载结果（含 `defaultValue` 兜底 resolve 的成功）。
+     * 支持单个函数或函数数组，数组时逐个并发调用，任一回调抛错被忽略。
      */
-    onAfterLoad?: (result?: T, error?: any) => void;
+    onFulfilled?: ((result: T) => void) | ((result: T) => void)[];
+    /**
+     * 加载失败/中止时调用（缓存命中不触发）
+     *
+     * 在最终失败（重试耗尽或主动 abort）时触发，`error` 为错误对象。
+     * 支持单个函数或函数数组，数组时逐个并发调用，任一回调抛错被忽略。
+     */
+    onRejected?: ((error: Error) => void) | ((error: Error) => void)[];
     meta?: M;
 };
 /**
@@ -131,18 +137,26 @@ export interface CacheItem<T> {
 /**
  * 传给底层加载函数的参数
  */
-export type AsyncLoaderArgs = {
+export type AsyncLoaderArgs<M extends Record<string, any> = Record<string, any>> = {
     /** 合并后的中止信号（用户主动中止 + 本次尝试超时） */
     abortSignal: AbortSignal;
+    meta: M;
 };
 /**
  * 底层加载函数类型
  *
- * 通过 `args.abortSignal` 接收中止信号（可直接传入 `fetch` 的 `signal` 选项）。
+ * - 通过 `args.abortSignal` 接收中止信号（可直接传入 `fetch` 的 `signal` 选项）；
+ * - 通过 `args.meta` 读写加载过程中的元数据（如 fetch 的 `statusCode`），与 `loader.meta` 共享同一引用，写入即可在外部读取。
+ *
  * 返回值可为 Promise 或同步值；同步 `throw` 与返回 rejected Promise 等价，
- * 均会进入既有的重试 / defaultValue / onAfterLoad 错误处理链。
+ * 均会进入既有的重试 / defaultValue / onRejected 错误处理链。
+ *
+ * @typeParam T 加载结果类型
+ * @typeParam M 元数据类型
  */
-export type IAsyncLoader<T = any> = (args: AsyncLoaderArgs) => Promise<T> | T;
+export type IAsyncLoader<T = any, M extends Record<string, any> = Record<string, any>> = (
+    args: AsyncLoaderArgs<M>,
+) => Promise<T> | T;
 
 /**
  * 基于 {@link IAsyncSignal} 的异步数据加载器
@@ -239,7 +253,7 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
      * @param options 配置选项，见 {@link AsyncLoaderOptions}
      */
     constructor(
-        public loader: IAsyncLoader<T>,
+        public loader: IAsyncLoader<T, M>,
         options?: AsyncLoaderOptions<T, M>,
     ) {
         this.options = Object.assign(
@@ -250,6 +264,7 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
                 retryDelay: 0,
                 storage: MapStorage,
                 multiplex: "off",
+                meta: {},
             },
             options,
         );
@@ -288,8 +303,19 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
     get hash() {
         return this.options.hash;
     }
-    get meta() {
-        return this.options.meta;
+    /**
+     * 加载过程的元数据：与底层加载函数的 `args.meta` 共享同一引用，
+     * 加载函数写入的字段（如 fetch 的 statusCode）可在此直接读取。
+     * 构造时由 `options.meta` 初始化（默认 `{}`）。
+     */
+    get meta(): M {
+        return this.options.meta as M;
+    }
+    get error() {
+        return this.signal.error;
+    }
+    get result() {
+        return this.signal.result;
     }
     /**
      * 触发一次加载
@@ -326,7 +352,7 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
             AsyncLoader.loaderCache ??= new Map();
             AsyncLoader.loaderCache.set(this.options.hash!, new WeakRef(this as AsyncLoader<any>));
         }
-        safeCall(this.options.onBeforeLoad);
+        safeCall(this.options.onPending);
         this.loading = true;
         this._loadToken++; // 新一轮加载周期，作废此前未完成的 _executeLoad 回调
         this._executeLoad(userAbortSignal, 0);
@@ -351,7 +377,10 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
         // 传给底层 loader 的 signal = 用户主动中止 + 本次超时
         const loaderSignals: AbortSignal[] = [userAbortSignal];
         if (timeoutController) loaderSignals.push(timeoutController.signal);
-        const args = { abortSignal: mergeAbortSignal(...loaderSignals)! } as AsyncLoaderArgs;
+        const args: AsyncLoaderArgs<M> = {
+            abortSignal: mergeAbortSignal(...loaderSignals)!,
+            meta: this.meta, // 与 loader.meta 共享同一引用：加载函数写入的元数据外部可读
+        };
 
         // 允许 loader 返回同步值或 Promise；同步 throw 经 Promise.reject 统一进入 catch
         let loaderResult: Promise<T> | T;
@@ -369,7 +398,7 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
                 this.loading = false;
                 this.signal.resolve(result);
                 this._removeFromLoaderCache(); // 加载成功终态：移除 inflight 缓存
-                safeCall(this.options.onAfterLoad, result);
+                safeCall(this.options.onFulfilled, result);
             })
             .catch((e: any) => {
                 if (timeoutId) clearTimeout(timeoutId); // 先清理定时器，避免被取代的旧回调 return 跳过导致延迟释放
@@ -392,11 +421,11 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
                     if (!userAbortSignal.aborted && this.options.defaultValue !== undefined) {
                         this.signal.resolve(this.options.defaultValue);
                         this._removeFromLoaderCache();
-                        safeCall(this.options.onAfterLoad, this.options.defaultValue);
+                        safeCall(this.options.onFulfilled, this.options.defaultValue);
                     } else {
                         this.signal.reject(finalError);
                         this._removeFromLoaderCache();
-                        safeCall(this.options.onAfterLoad, undefined, finalError);
+                        safeCall(this.options.onRejected, finalError);
                     }
                 }
             });
@@ -510,11 +539,11 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
         // abort 是加载终态：从 inflight 缓存移除（_executeLoad.catch 微任务再调时幂等跳过）
         this._removeFromLoaderCache();
         // 若处于重试等待中：终止等待并触发结束回调
-        // （加载中的 abort 由 _executeLoad 的 catch 触发 onAfterLoad，此处补重试等待场景）
+        // （加载中的 abort 由 _executeLoad 的 catch 触发 onRejected，此处补重试等待场景）
         if (this._retryTimerId) {
             clearTimeout(this._retryTimerId);
             this._retryTimerId = 0;
-            safeCall(this.options.onAfterLoad, undefined, this.signal.error);
+            safeCall(this.options.onRejected, this.signal.error);
         }
     }
     /**

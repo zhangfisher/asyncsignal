@@ -62,11 +62,11 @@ describe("泛型类型推断测试", () => {
         signal.meta.config = {
             timeout: 5000,
             retries: 3,
-            headers: { "Content-Type": "application/json" }
+            headers: { "Content-Type": "application/json" },
         };
 
         signal.meta.tracking = {
-            startTime: Date.now()
+            startTime: Date.now(),
         };
 
         expect(signal.meta.config.timeout).toBe(5000);
@@ -145,8 +145,9 @@ describe("泛型类型推断测试", () => {
         }
 
         const signal = asyncSignal<void, ReadonlyMetadata>();
-
+        //@ts-ignore
         signal.meta.id = "123";
+        //@ts-ignore
         signal.meta.createdAt = Date.now();
         signal.meta.mutable = "can change";
 

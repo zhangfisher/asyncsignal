@@ -528,31 +528,28 @@ describe("AsyncLoader 重试", () => {
 });
 
 describe("AsyncLoader 回调", () => {
-    test("onBeforeLoad/onAfterLoad 在实际加载时各触发一次", async () => {
+    test("onPending/onFulfilled 在实际加载时各触发一次", async () => {
         const { fn } = createLoader("data", 10);
-        let beforeCount = 0;
-        let afterCount = 0;
-        let afterResult: any;
-        let afterError: any;
+        let pendingCount = 0;
+        let fulfilledCount = 0;
+        let fulfilledResult: any;
         const loader = new AsyncLoader(fn, {
             autostart: false,
-            onBeforeLoad: () => {
-                beforeCount++;
+            onPending: () => {
+                pendingCount++;
             },
-            onAfterLoad: (r, e) => {
-                afterCount++;
-                afterResult = r;
-                afterError = e;
+            onFulfilled: (r) => {
+                fulfilledCount++;
+                fulfilledResult = r;
             },
         });
         await loader.get();
-        expect(beforeCount).toBe(1);
-        expect(afterCount).toBe(1);
-        expect(afterResult).toBe("data");
-        expect(afterError).toBeUndefined();
+        expect(pendingCount).toBe(1);
+        expect(fulfilledCount).toBe(1);
+        expect(fulfilledResult).toBe("data");
     });
 
-    test("缓存命中时不触发 onBeforeLoad/onAfterLoad", async () => {
+    test("缓存命中时不触发 onPending/onFulfilled/onRejected", async () => {
         const first = createLoader("data", 10);
         const loader1 = new AsyncLoader(first.fn, {
             autostart: false,
@@ -562,29 +559,34 @@ describe("AsyncLoader 回调", () => {
         await loader1.get(); // 写入缓存
 
         const second = createLoader("new", 10);
-        let before2 = 0;
-        let after2 = 0;
+        let pending2 = 0;
+        let fulfilled2 = 0;
+        let rejected2 = 0;
         const loader2 = new AsyncLoader(second.fn, {
             autostart: false,
             cache: 10000,
             hash: "cb",
-            onBeforeLoad: () => before2++,
-            onAfterLoad: () => after2++,
+            onPending: () => pending2++,
+            onFulfilled: () => fulfilled2++,
+            onRejected: () => rejected2++,
         });
         await loader2.get();
-        expect(before2).toBe(0);
-        expect(after2).toBe(0);
+        expect(pending2).toBe(0);
+        expect(fulfilled2).toBe(0);
+        expect(rejected2).toBe(0);
     });
 
-    test("onAfterLoad 失败时带 error", async () => {
+    test("onRejected 失败时带 error，onFulfilled 不触发", async () => {
         const { fn } = createFailingLoader(99, "ok", 10);
-        let afterResult: any;
-        let afterError: any;
+        let fulfilledResult: any;
+        let rejectedError: any;
         const loader = new AsyncLoader(fn, {
             autostart: false,
-            onAfterLoad: (r, e) => {
-                afterResult = r;
-                afterError = e;
+            onFulfilled: (r) => {
+                fulfilledResult = r;
+            },
+            onRejected: (e) => {
+                rejectedError = e;
             },
         });
         try {
@@ -592,38 +594,36 @@ describe("AsyncLoader 回调", () => {
         } catch {
             // 预期失败
         }
-        expect(afterResult).toBeUndefined();
-        expect((afterError as Error).message).toBe("fail#1");
+        expect(fulfilledResult).toBeUndefined();
+        expect((rejectedError as Error).message).toBe("fail#1");
     });
 
-    test("重试过程 onBeforeLoad/onAfterLoad 仅整体触发一次", async () => {
+    test("重试过程 onPending/onFulfilled 仅整体触发一次", async () => {
         const { fn, getCalls } = createFailingLoader(2, "ok", 10);
-        let beforeCount = 0;
-        let afterCount = 0;
-        let afterError: any;
+        let pendingCount = 0;
+        let fulfilledCount = 0;
+        let rejectedCount = 0;
         const loader = new AsyncLoader(fn, {
             autostart: false,
             retry: 2,
-            onBeforeLoad: () => beforeCount++,
-            onAfterLoad: (_r, e) => {
-                afterCount++;
-                afterError = e;
-            },
+            onPending: () => pendingCount++,
+            onFulfilled: () => fulfilledCount++,
+            onRejected: () => rejectedCount++,
         });
         await loader.get();
         expect(getCalls()).toBe(3); // 初始 + 2 次重试
-        expect(beforeCount).toBe(1); // 整体一次
-        expect(afterCount).toBe(1); // 最终一次
-        expect(afterError).toBeUndefined(); // 最终成功
+        expect(pendingCount).toBe(1); // 整体一次
+        expect(fulfilledCount).toBe(1); // 最终成功一次
+        expect(rejectedCount).toBe(0); // 最终成功，不触发 onRejected
     });
 
-    test("加载中 abort 时 onAfterLoad 触发带 error", async () => {
+    test("加载中 abort 时 onRejected 触发带 error", async () => {
         const { fn } = createLoader("data", 1000);
-        let afterError: any;
+        let rejectedError: any;
         const loader = new AsyncLoader(fn, {
             autostart: false,
-            onAfterLoad: (_r, e) => {
-                afterError = e;
+            onRejected: (e) => {
+                rejectedError = e;
             },
         });
         const promise = loader.get();
@@ -633,20 +633,20 @@ describe("AsyncLoader 回调", () => {
         } catch {
             // 预期 AbortError
         }
-        expect(afterError).toBeInstanceOf(AbortError);
+        expect(rejectedError).toBeInstanceOf(AbortError);
     });
 
-    test("重试等待中 abort 触发 onAfterLoad", async () => {
+    test("重试等待中 abort 触发 onRejected", async () => {
         const { fn } = createFailingLoader(99, "ok", 5);
-        let afterCount = 0;
-        let afterError: any;
+        let rejectedCount = 0;
+        let rejectedError: any;
         const loader = new AsyncLoader(fn, {
             autostart: false,
             retry: 5,
             retryDelay: 200,
-            onAfterLoad: (_r, e) => {
-                afterCount++;
-                afterError = e;
+            onRejected: (e) => {
+                rejectedCount++;
+                rejectedError = e;
             },
         });
         const promise = loader.get();
@@ -657,25 +657,100 @@ describe("AsyncLoader 回调", () => {
         } catch {
             // 预期 AbortError
         }
-        expect(afterCount).toBe(1);
-        expect(afterError).toBeInstanceOf(AbortError);
+        expect(rejectedCount).toBe(1);
+        expect(rejectedError).toBeInstanceOf(AbortError);
     });
 
     test("回调内部抛错被忽略，不影响加载主流程", async () => {
         const { fn } = createLoader("data", 10);
         const loader = new AsyncLoader(fn, {
             autostart: false,
-            onBeforeLoad: () => {
-                throw new Error("before boom");
+            onPending: () => {
+                throw new Error("pending boom");
             },
-            onAfterLoad: () => {
-                throw new Error("after boom");
+            onFulfilled: () => {
+                throw new Error("fulfilled boom");
             },
         });
         // 回调抛错不应影响加载流程
         const result = await loader.get();
         expect(result).toBe("data");
         expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+
+    test("onPending/onFulfilled/onRejected 支持函数数组并发调用", async () => {
+        const { fn } = createLoader("data", 10);
+        const pendingCalls: number[] = [];
+        const fulfilledResults: any[] = [];
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            onPending: [
+                () => pendingCalls.push(1),
+                () => pendingCalls.push(2),
+                () => pendingCalls.push(3),
+            ],
+            onFulfilled: [
+                (r) => fulfilledResults.push(r),
+                (r) => fulfilledResults.push(`got:${r}`),
+            ],
+        });
+        await loader.get();
+        expect(pendingCalls).toEqual([1, 2, 3]);
+        expect(fulfilledResults).toEqual(["data", "got:data"]);
+    });
+
+    test("数组中单个回调抛错不影响其他回调", async () => {
+        const { fn } = createFailingLoader(99, "ok", 10);
+        const rejected: number[] = [];
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            onRejected: [
+                () => {
+                    throw new Error("boom");
+                },
+                () => rejected.push(1),
+                () => rejected.push(2),
+            ],
+        });
+        try {
+            await loader.get();
+        } catch {
+            // 预期失败
+        }
+        // 第一个回调抛错，后两个仍执行
+        expect(rejected).toEqual([1, 2]);
+    });
+
+    test("onFulfilled 与 onRejected 语义互斥", async () => {
+        // 成功：仅 onFulfilled
+        const ok = createLoader("data", 10);
+        let okFulfilled = 0;
+        let okRejected = 0;
+        const loaderOk = new AsyncLoader(ok.fn, {
+            autostart: false,
+            onFulfilled: () => okFulfilled++,
+            onRejected: () => okRejected++,
+        });
+        await loaderOk.get();
+        expect(okFulfilled).toBe(1);
+        expect(okRejected).toBe(0);
+
+        // 失败：仅 onRejected
+        const fail = createFailingLoader(99, "ok", 10);
+        let failFulfilled = 0;
+        let failRejected = 0;
+        const loaderFail = new AsyncLoader(fail.fn, {
+            autostart: false,
+            onFulfilled: () => failFulfilled++,
+            onRejected: () => failRejected++,
+        });
+        try {
+            await loaderFail.get();
+        } catch {
+            // 预期失败
+        }
+        expect(failFulfilled).toBe(0);
+        expect(failRejected).toBe(1);
     });
 });
 
@@ -1271,13 +1346,13 @@ describe("AsyncLoader 同步 loader（返回 Promise<T> | T）", () => {
         expect(loader.signal.isFulfilled()).toBeTrue();
     });
 
-    test("同步 throw + onAfterLoad：触发带 error", async () => {
+    test("同步 throw + onRejected：触发带 error", async () => {
         const { fn } = createSyncFailingLoader(99, "ok");
-        let afterError: any;
+        let rejectedError: any;
         const loader = new AsyncLoader(fn, {
             autostart: false,
-            onAfterLoad: (_r, e) => {
-                afterError = e;
+            onRejected: (e) => {
+                rejectedError = e;
             },
         });
         try {
@@ -1285,7 +1360,7 @@ describe("AsyncLoader 同步 loader（返回 Promise<T> | T）", () => {
         } catch {
             // 预期同步失败
         }
-        expect((afterError as Error).message).toBe("sync-fail#1");
+        expect((rejectedError as Error).message).toBe("sync-fail#1");
     });
 
     test("同步成功后 abort 无副作用：已完成终态不被改变", async () => {
@@ -1403,5 +1478,160 @@ describe("AsyncLoader 加载状态 isPending/isFulfilled/isRejected", () => {
         loader.invalidate();
         expect(loader.isPending()).toBeFalse(); // 仅标记失效，未立即加载
         expect(loader.isFulfilled()).toBeFalse(); // reset 后终态清除
+    });
+});
+
+describe("AsyncLoader 结果与错误访问（result / error）", () => {
+    test("加载成功：result 返回加载值，error 为 undefined", async () => {
+        const { fn } = createLoader("data", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        expect(loader.result).toBeUndefined(); // 加载前
+        expect(loader.error).toBeUndefined();
+        await loader.get();
+        expect(loader.result).toBe("data");
+        expect(loader.error).toBeUndefined();
+    });
+
+    test("加载失败：error 返回错误，result 为 undefined", async () => {
+        const { fn } = createFailingLoader(99, "ok", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        try {
+            await loader.get();
+        } catch {
+            // 预期失败
+        }
+        expect(loader.error).toBeInstanceOf(Error);
+        expect((loader.error as Error).message).toBe("fail#1");
+        expect(loader.result).toBeUndefined();
+    });
+
+    test("abort 后：error 为 AbortError，result 为 undefined", async () => {
+        const { fn } = createLoader("data", 1000);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        const promise = loader.get();
+        loader.abort();
+        try {
+            await promise;
+        } catch {
+            // 预期 AbortError
+        }
+        expect(loader.error).toBeInstanceOf(AbortError);
+        expect(loader.result).toBeUndefined();
+    });
+
+    test("defaultValue 兜底：result 为默认值，error 为 undefined", async () => {
+        const { fn } = createFailingLoader(99, "ok", 10);
+        const loader = new AsyncLoader(fn, {
+            autostart: false,
+            defaultValue: "fallback",
+        });
+        await loader.get();
+        expect(loader.result).toBe("fallback");
+        expect(loader.error).toBeUndefined();
+    });
+
+    test("result / error 与 signal.result / signal.error 始终同步", async () => {
+        const { fn } = createLoader("data", 10);
+        const loader = new AsyncLoader(fn, { autostart: false });
+        expect(loader.result).toBe(loader.signal.result);
+        expect(loader.error).toBe(loader.signal.error);
+        await loader.get();
+        expect(loader.result).toBe(loader.signal.result);
+        expect(loader.error).toBe(loader.signal.error);
+    });
+});
+
+describe("AsyncLoader 元数据（meta）", () => {
+    test("加载函数通过 args.meta 写入，loader.meta 可读", async () => {
+        const loader = new AsyncLoader<string, { statusCode?: number }>(
+            (args) => {
+                args.meta.statusCode = 200;
+                return "data";
+            },
+            { autostart: false, meta: {} },
+        );
+        await loader.get();
+        expect(loader.meta.statusCode).toBe(200);
+    });
+
+    test("构造时传入初始 meta，加载函数可读取", async () => {
+        const loader = new AsyncLoader<number, { id: number }>(
+            (args) => args.meta.id,
+            { autostart: false, meta: { id: 42 } },
+        );
+        expect(await loader.get()).toBe(42);
+        expect(loader.meta.id).toBe(42);
+    });
+
+    test("未提供 meta 时默认为空对象，加载函数可写入", async () => {
+        const loader = new AsyncLoader<string>(
+            (args) => {
+                args.meta.foo = "bar";
+                return "data";
+            },
+            { autostart: false },
+        );
+        await loader.get();
+        expect(loader.meta.foo).toBe("bar");
+    });
+
+    test("模拟 fetch 场景：将响应状态码保存到 meta", async () => {
+        interface FetchMeta {
+            statusCode?: number;
+        }
+        const fakeResponse = { status: 200, body: "ok" };
+        const loader = new AsyncLoader<string, FetchMeta>(
+            async (args) => {
+                // 模拟 fetch 完成后保存状态码到 meta
+                args.meta.statusCode = fakeResponse.status;
+                return fakeResponse.body;
+            },
+            { autostart: false, meta: {} },
+        );
+        expect(await loader.get()).toBe("ok");
+        expect(loader.meta.statusCode).toBe(200);
+    });
+
+    test("加载失败时加载函数写入的 meta 仍可见", async () => {
+        const loader = new AsyncLoader<string, { statusCode?: number }>(
+            (args) => {
+                args.meta.statusCode = 500;
+                throw new Error("server error");
+            },
+            { autostart: false, meta: {} },
+        );
+        try {
+            await loader.get();
+        } catch {
+            // 预期失败
+        }
+        expect(loader.meta.statusCode).toBe(500);
+    });
+
+    test("args.meta 与 loader.meta 为同一引用（写入即外部可见）", async () => {
+        let argsMeta: Record<string, any> | undefined;
+        const loader = new AsyncLoader<string>(
+            (args) => {
+                argsMeta = args.meta;
+                return "data";
+            },
+            { autostart: false },
+        );
+        await loader.get();
+        expect(argsMeta).toBe(loader.meta);
+    });
+
+    test("重试过程共享同一 meta（多次尝试累积写入）", async () => {
+        const loader = new AsyncLoader<string, { attempts: number[] }>(
+            (args) => {
+                args.meta.attempts.push(args.meta.attempts.length + 1);
+                if (args.meta.attempts.length < 3) throw new Error("retry");
+                return "ok";
+            },
+            { autostart: false, retry: 3, meta: { attempts: [] } },
+        );
+        const result = await loader.get();
+        expect(result).toBe("ok");
+        expect(loader.meta.attempts).toEqual([1, 2, 3]);
     });
 });
