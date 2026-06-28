@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.2.0
+
+### Minor Changes
+
+- 809a694: 新增加 asyncLoader 用于异步加载数据
+
 ## 0.1.1
 
 ### Patch Changes
