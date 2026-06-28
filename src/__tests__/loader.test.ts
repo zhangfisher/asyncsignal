@@ -754,6 +754,56 @@ describe("AsyncLoader 回调", () => {
     });
 });
 
+describe("AsyncLoader.resolve/reject 静态工厂", () => {
+    test("resolve 创建已成功实例：始终 isFulfilled、get 直接返回结果、不触发加载", async () => {
+        const loader = AsyncLoader.resolve("data");
+        expect(loader.isFulfilled()).toBe(true);
+        expect(loader.isPending()).toBe(false);
+        expect(loader.isRejected()).toBe(false);
+        expect(loader.result).toBe("data");
+        expect(loader.loading).toBe(false); // 从未触发加载
+
+        const result = await loader.get();
+        expect(result).toBe("data");
+        expect(loader.loading).toBe(false); // get 后仍未加载
+        expect(loader.isFulfilled()).toBe(true);
+    });
+
+    test("reject 创建已失败实例：始终 isRejected、get 抛出错误、不触发加载", async () => {
+        const err = new Error("boom");
+        const loader = AsyncLoader.reject(err);
+        expect(loader.isRejected()).toBe(true);
+        expect(loader.isPending()).toBe(false);
+        expect(loader.isFulfilled()).toBe(false);
+        expect(loader.error).toBe(err);
+        expect(loader.loading).toBe(false);
+
+        let caught: Error | undefined;
+        try {
+            await loader.get();
+        } catch (e) {
+            caught = e as Error;
+        }
+        expect(caught).toBe(err);
+        expect(loader.loading).toBe(false);
+        expect(loader.isRejected()).toBe(true);
+    });
+
+    test("resolve/reject 无缓存（hash 为空，不参与缓存/multiplex）", () => {
+        const ok = AsyncLoader.resolve("data");
+        const fail = AsyncLoader.reject(new Error("boom"));
+        expect(ok.hash).toBeUndefined();
+        expect(fail.hash).toBeUndefined();
+    });
+
+    test("resolve 支持任意结果类型", async () => {
+        const objLoader = AsyncLoader.resolve({ a: 1 });
+        expect(await objLoader.get()).toEqual({ a: 1 });
+        const numLoader = AsyncLoader.resolve(42);
+        expect(await numLoader.get()).toBe(42);
+    });
+});
+
 describe("AsyncLoader multiplex", () => {
     beforeEach(() => {
         AsyncLoader.clearLoaderCache();

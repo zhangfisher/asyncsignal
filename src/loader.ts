@@ -227,6 +227,37 @@ export class AsyncLoader<T = any, M extends Record<string, any> = Record<string,
     static clearLoaderCache(): void {
         AsyncLoader.loaderCache?.clear();
     }
+    /**
+     * 创建一个已成功的 AsyncLoader 实例（无缓存、不触发加载），始终 `isFulfilled`。
+     *
+     * 类似 `Promise.resolve`：内部 signal 已 resolve 给定结果，`get()` 直接返回该结果，
+     * 不会调用底层加载函数。不写入缓存、不参与 multiplex 复用（`hash` 为空、`cache=0`）。
+     *
+     * @param result 预置的结果值
+     */
+    static resolve<T>(result: T): AsyncLoader<T> {
+        const loader = new AsyncLoader<T>(() => result, { autostart: false });
+        loader.signal.resolve(result);
+        return loader;
+    }
+    /**
+     * 创建一个已失败的 AsyncLoader 实例（无缓存、不触发加载），始终 `isRejected`。
+     *
+     * 类似 `Promise.reject`：内部 signal 已 reject 给定错误，`get()` 直接抛出该错误，
+     * 不会调用底层加载函数。不写入缓存、不参与 multiplex 复用（`hash` 为空、`cache=0`）。
+     *
+     * @param error 预置的错误对象
+     */
+    static reject<T>(error: Error): AsyncLoader<T> {
+        const loader = new AsyncLoader<T>(
+            () => {
+                throw error;
+            },
+            { autostart: false },
+        );
+        loader.signal.reject(error);
+        return loader;
+    }
     /** 合并默认值后的构造选项 */
     options: AsyncLoaderOptions<T, M>;
     /** 是否正在加载（含重试过程），加载结束后复位为 false */

@@ -564,8 +564,9 @@ await signal2(); // 无需手动重置即可再次使用
   | `multiplex`    | `"off" \| "restart" \| "share"` | `"off"`      | 按 `hash` 复用加载器实例。`"off"`：各实例独立；`"restart"`：命中同 `hash` 且正在进行中的加载时，中止该加载并以首个实例的 loader 重新加载（后续 loader 被忽略）；`"share"`：完全共享首个实例进行中的加载与结果。非 `off` 且未提供 `hash` 时，基于 loader 函数自动生成 hash |
   | `defaultValue` | `T`                             | —            | 最终失败（业务错误 / 重试耗尽后的超时）时 resolve 的兜底值。显式提供时 falsy 值（`0` / `""` / `null` / `false`）同样生效；对主动 abort 无效；不写入缓存                                                                                                                   |
   | `storage`      | `IStorage`                      | `MapStorage` | 缓存项的存储后端                                                                                                                                                                                                                                                          |
-  | `onBeforeLoad` | `() => void`                    | —            | 加载开始前调用（仅实际加载时，缓存命中不触发）；回调内抛错会被忽略                                                                                                                                                                                                        |
-  | `onAfterLoad`  | `(result?, error?) => void`     | —            | 加载结束后调用（成功带 `result`，失败/中止带 `error`），缓存命中不触发；回调内抛错会被忽略                                                                                                                                                                                |
+  | `onPending` | `(() => void) \| (() => void)[]` | — | 加载开始时调用（仅实际加载时，缓存命中不触发）。支持单个函数或函数数组，数组并发调用，回调内抛错被忽略 |
+  | `onFulfilled` | `((result: T) => void) \| ((result: T) => void)[]` | — | 加载成功时调用（缓存命中不触发），`result` 为加载结果（含 `defaultValue` 兜底）。支持单个函数或函数数组，数组并发调用，回调内抛错被忽略 |
+  | `onRejected` | `((error: Error) => void) \| ((error: Error) => void)[]` | — | 加载失败/中止时调用（重试耗尽或主动 `abort`，缓存命中不触发），`error` 为错误对象。支持单个函数或函数数组，数组并发调用，回调内抛错被忽略 |
 
   #### 缓存
 

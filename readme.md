@@ -561,8 +561,9 @@ The `AsyncLoaderOptions` type:
 | `multiplex` | `"off" \| "restart" \| "share"` | `"off"` | Reuse loader instances by `hash`. `"off"`: each instance is independent; `"restart"`: when hitting the same `hash` that is inflight, abort that load and reload with the first instance's loader (later loaders are ignored); `"share"`: fully share the inflight load and result of the first instance. Auto-generates a hash from the loader function when not `off` and no `hash` is given |
 | `defaultValue` | `T` | — | Fallback resolved on final failure (business error / timeout after retries exhausted). Falsy values (`0` / `""` / `null` / `false`) are valid when explicitly provided. No effect on manual abort; not written to cache |
 | `storage` | `IStorage` | `MapStorage` | Storage backend for cache entries |
-| `onBeforeLoad` | `() => void` | — | Called before loading starts (only on actual loads, not cache hits); errors thrown inside are ignored |
-| `onAfterLoad` | `(result?, error?) => void` | — | Called after loading ends (success yields `result`, failure/abort yields `error`), not on cache hits; errors thrown inside are ignored |
+| `onPending` | `(() => void) \| (() => void)[]` | — | Called when loading starts (only on actual loads, not cache hits). Accepts one callback or an array; array items are invoked concurrently and errors thrown inside are ignored |
+| `onFulfilled` | `((result: T) => void) \| ((result: T) => void)[]` | — | Called on success including `defaultValue` fallback (not on cache hits); `result` is the loaded value. Accepts one callback or an array (invoked concurrently, errors ignored) |
+| `onRejected` | `((error: Error) => void) \| ((error: Error) => void)[]` | — | Called on final failure or abort (after retries exhausted or manual abort, not on cache hits); `error` is the error object. Accepts one callback or an array (invoked concurrently, errors ignored) |
 
 #### Caching
 
