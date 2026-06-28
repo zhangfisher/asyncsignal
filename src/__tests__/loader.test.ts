@@ -1096,3 +1096,78 @@ describe("AsyncLoader refresh/invalidate", () => {
         expect(calls).toBe(2);
     });
 });
+
+describe("AsyncLoader 加载终态后再次 get()", () => {
+    test("成功终态(cache=0)：再次 get() 立即返回同一结果，不重新加载", async () => {
+        const { fn, getCalls } = createLoader("ok", 10);
+        const loader = new AsyncLoader(fn, { autostart: false }); // cache=0 默认无缓存
+
+        const r1 = await loader.get();
+        expect(r1).toBe("ok");
+        expect(getCalls()).toBe(1);
+        expect(loader.signal.isFulfilled()).toBeTrue();
+
+        // signal 已 fulfilled：再次 get() 不触发 load()，立即返回已缓存的结果
+        const r2 = await loader.get();
+        expect(r2).toBe("ok");
+        expect(getCalls()).toBe(1); // 未重新调用底层
+        expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+
+    test("失败终态(cache=0)：再次 get() 重新发起加载并再次失败（自动重试语义）", async () => {
+        const { fn, getCalls } = createFailingLoader(99, "ok", 10); // 持续失败
+        const loader = new AsyncLoader(fn, { autostart: false });
+
+        try {
+            await loader.get();
+            expect(false).toBeTrue(); // 不应到达
+        } catch (e) {
+            expect((e as Error).message).toBe("fail#1");
+        }
+        expect(getCalls()).toBe(1);
+        expect(loader.signal.isRejected()).toBeTrue();
+
+        // rejected 非记忆终态：再次 get() 重新加载（reset signal + 重新调用底层），而非立即返回上次错误
+        try {
+            await loader.get();
+            expect(false).toBeTrue(); // 不应到达
+        } catch (e) {
+            expect((e as Error).message).toBe("fail#2");
+        }
+        expect(getCalls()).toBe(2); // 重新加载 → 底层再次被调用
+    });
+
+    test("失败终态后底层恢复：再次 get() 重新加载并成功拿到新值", async () => {
+        // 可变 loader：首次失败，之后成功并返回新值
+        let calls = 0;
+        const fn = (args: AsyncLoaderArgs) => {
+            calls++;
+            return new Promise<string>((resolve, reject) => {
+                const t = setTimeout(() => {
+                    if (calls === 1) reject(new Error("fail#1"));
+                    else resolve("recovered");
+                }, 10);
+                args.abortSignal.addEventListener("abort", () => {
+                    clearTimeout(t);
+                    reject(new AbortError());
+                });
+            });
+        };
+        const loader = new AsyncLoader(fn, { autostart: false });
+
+        try {
+            await loader.get();
+            expect(false).toBeTrue(); // 不应到达
+        } catch (e) {
+            expect((e as Error).message).toBe("fail#1");
+        }
+        expect(calls).toBe(1);
+        expect(loader.signal.isRejected()).toBeTrue();
+
+        // 底层恢复后再次 get()：重新加载并成功，rejected → fulfilled 透明恢复
+        const r = await loader.get();
+        expect(r).toBe("recovered");
+        expect(calls).toBe(2);
+        expect(loader.signal.isFulfilled()).toBeTrue();
+    });
+});

@@ -4,6 +4,17 @@ Reusable asynchronous signals, like `Promise.withResolvers()` but with more powe
 
 [中文](./readme_CN.md)
 
+## Overview
+
+AsyncSignal provides two complementary building blocks for asynchronous operations:
+
+| Module | What it is | Key capabilities |
+| --- | --- | --- |
+| **`asyncSignal`** | A reusable async signal — like `Promise.withResolvers()`, but resettable, observable, and abort-aware | Manual resolve/reject/reset; static `resolve`/`reject`; wait timeout; constraints (`until`); abort integration; typed metadata |
+| **`AsyncLoader`** | An async data loader built on top of `asyncSignal` | Load + cache + abort + per-attempt timeout + auto retry; instance reuse (`multiplex`); error fallback (`defaultValue`) |
+
+Use `asyncSignal` directly for fine-grained control of an async flow; reach for `AsyncLoader` when you need a loading lifecycle, caching, retries, and deduplication around a data-fetching function.
+
 ## Features
 
 - **Signal Control**: Create reusable async signals that can be manually resolved or rejected
@@ -506,6 +517,8 @@ An async data loader built on AsyncSignal, encapsulating five capabilities: **lo
 - **Abort**: `abort()` penetrates to the underlying request via the internal signal
 - **Per-attempt timeout**: `timeout>0` sets a timeout for each attempt; a timeout counts as a retryable failure
 - **Auto retry**: `retry>0` auto-retries on timeout and business errors; manual abort does not retry
+- **Multiplexing**: reuse loader instances by `hash` — `"off"` (independent), `"restart"` (abort the inflight load of the same hash and reload with the first loader), or `"share"` (fully share the inflight load and result)
+- **Error fallback**: `defaultValue` swallows the final failure (business error / timeout after retries exhausted) and resolves a fallback value
 
 ### Basic Usage
 
@@ -532,6 +545,9 @@ loader.abort();                    // abort loading
 | `timeout` | `number` | — | Per-attempt timeout in ms, effective when `>0`; a timeout counts as a retryable failure |
 | `retry` | `number` | `0` | Max retry count on failure. Manual abort does not retry; timeout and business errors do |
 | `retryDelay` | `number` | `0` | Milliseconds to wait before each retry |
+| `multiplex` | `"off" \| "restart" \| "share"` | `"off"` | Reuse loader instances by `hash`. `"off"`: each instance is independent; `"restart"`: when hitting the same `hash` that is inflight, abort that load and reload with the first instance's loader (later loaders are ignored); `"share"`: fully share the inflight load and result of the first instance. Auto-generates a hash from the loader function when not `off` and no `hash` is given |
+| `defaultValue` | `T` | — | Fallback resolved on final failure (business error / timeout after retries exhausted). Falsy values (`0` / `""` / `null` / `false`) are valid when explicitly provided. No effect on manual abort; not written to cache |
+| `storage` | `IStorage` | `MapStorage` | Storage backend for cache entries |
 | `onBeforeLoad` | `() => void` | — | Called before loading starts (only on actual loads, not cache hits); errors thrown inside are ignored |
 | `onAfterLoad` | `(result?, error?) => void` | — | Called after loading ends (success yields `result`, failure/abort yields `error`), not on cache hits; errors thrown inside are ignored |
 
@@ -548,8 +564,8 @@ const loader = new AsyncLoader(
 await loader.get();  // first load, writes to cache
 await loader.get();  // cache hit, underlying not called
 
-loader.clear();         // clear current instance's cache
-AsyncLoader.clearAll(); // clear all cache entries
+loader.clear();    // clear current instance's cache entry
+loader.clearAll(); // clear all cache entries (shared storage)
 ```
 
 ### Abort & Timeout
@@ -583,6 +599,58 @@ const loader = new AsyncLoader(
 );
 ```
 
+### Multiplexing
+
+Reuse loader instances by `hash` to deduplicate concurrent or repeated loads. Effective only when `hash` is provided (or auto-generated from the loader function):
+
+```typescript
+// "share": loaders with the same hash share one inflight load
+const l1 = new AsyncLoader(fn, { hash: "req", multiplex: "share" });
+const l2 = new AsyncLoader(fn, { hash: "req", multiplex: "share" });
+console.log(l1 === l2); // true — same instance, one underlying call
+
+// "restart": a new loader with the same hash aborts the inflight load and reloads
+const a = new AsyncLoader(fnA, { hash: "req", multiplex: "restart" });
+const b = new AsyncLoader(fnB, { hash: "req", multiplex: "restart" });
+// a's inflight load is aborted, reloaded with fnA (fnB is ignored)
+```
+
+- `"off"` (default): each instance is independent.
+- `"restart"`: hitting an **inflight** instance of the same hash aborts it and reloads with the first instance's loader.
+- `"share"`: hitting the same hash fully shares the inflight load and result.
+
+> Both modes behave the same when the matched instance is pending (not yet loading) or there is no match.
+
+### Error Fallback (`defaultValue`)
+
+On final failure (business error, or timeout after retries are exhausted), providing `defaultValue` swallows the error and resolves the fallback instead:
+
+```typescript
+const loader = new AsyncLoader(fetchUser, { defaultValue: defaultUser });
+
+const user = await loader.get(); // on failure, resolves defaultUser instead of throwing
+```
+
+- Falsy values (`0` / `""` / `null` / `false`) are valid fallbacks when explicitly provided.
+- Has **no effect** on manual `abort()` (still rejects with `AbortError`).
+- The fallback is not written to the cache, so the next `get()` reloads to fetch the real value.
+
+### Refresh & Invalidate
+
+`refresh()` forces a reload ignoring fresh cache; `invalidate()` marks data stale so the next `get()` reloads:
+
+```typescript
+const loader = new AsyncLoader(fn, { cache: 60_000, hash: "data" });
+await loader.get();
+
+await loader.refresh(); // force reload now, returns the new result (aborts any inflight load)
+loader.invalidate();    // mark stale; the next get() reloads
+await loader.get();     // reloads
+```
+
+- `refresh(args?)`: clears the cache and reloads immediately; aborts any inflight load first. Returns the new result.
+- `invalidate()`: clears the cache entry and resets a completed signal, but does **not** trigger loading — the next `get()` does. Unlike `clear()`, it also works without a cache (`cache=0`).
+
 ### API Reference
 
 **Constructor:**
@@ -597,14 +665,17 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 | --- | --- |
 | `get(args?)` | Get the result; auto-triggers loading on first call / cache stale / last failure. `args` is forwarded to the internal signal (`timeout` is a wait timeout, semantically different from `options.timeout`) |
 | `load()` | Trigger a load (usually no need to call manually; `get()` triggers it automatically) |
+| `refresh(args?)` | Force a reload ignoring fresh cache; aborts any inflight load first, then reloads and returns the new result. `args` is forwarded to the internal signal |
+| `invalidate()` | Mark the data stale: clears the cache entry and resets a completed signal, so the next `get()` reloads. Does not trigger loading immediately. Unlike `clear()`, it also works without a cache (`cache=0`) |
 | `abort()` | Abort loading, penetrating to the underlying request; also terminates any pending retry wait |
 | `clear()` | Clear the current instance's cache entry |
+| `clearAll()` | Clear all cache entries in the shared storage |
 
 **Static methods:**
 
 | Method | Description |
 | --- | --- |
-| `AsyncLoader.clearAll()` | Clear all cache entries shared across instances |
+| `AsyncLoader.clearLoaderCache()` | Clear the multiplex inflight-instance cache; mainly for test isolation between cases sharing a `hash` |
 
 **Instance properties:**
 
@@ -612,6 +683,8 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 | --- | --- |
 | `signal` | The internal `IAsyncSignal` carrying the result; observe its state and `result` / `error` |
 | `loading` | Whether a load (including retries) is in progress |
+| `loader` | The underlying loader function (constructor's first argument) |
+| `hash` | The cache/multiplex key (explicit or auto-generated) |
 | `options` | The merged constructor options |
 
 ## Open Source Projects

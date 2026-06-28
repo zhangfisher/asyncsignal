@@ -4,6 +4,17 @@
 
 [English](./readme.md)
 
+## 概述
+
+AsyncSignal 提供两个互补的异步操作基础模块：
+
+| 模块 | 是什么 | 核心能力 |
+| --- | --- | --- |
+| **`asyncSignal`** | 可复用的异步信号——类似 `Promise.withResolvers()`，但可重置、可观察、原生支持中止 | 手动 resolve/reject/reset；静态 `resolve`/`reject`；等待超时；约束函数（`until`）；中止集成；类型化元数据 |
+| **`AsyncLoader`** | 基于 `asyncSignal` 构建的异步数据加载器 | 加载 + 缓存 + 中止 + 每次尝试独立超时 + 自动重试；实例复用（`multiplex`）；错误兜底（`defaultValue`） |
+
+需要精细控制单个异步流程时直接使用 `asyncSignal`；围绕一个数据请求需要加载生命周期、缓存、重试与去重时使用 `AsyncLoader`。
+
 ## 特性
 
 - **信号控制**：创建可手动 resolve 或 reject 的可复用异步信号
@@ -525,6 +536,8 @@ console.log(signal.error); // Error: 失败
 - **中止**：`abort()` 借内部信号链路穿透到底层请求
 - **每次尝试独立超时**：`timeout>0` 为每次尝试设置超时，超时算作可重试的失败
 - **失败自动重试**：`retry>0` 对超时与业务错误自动重试；主动 abort 不重试
+- **实例复用（multiplex）**：按 `hash` 复用加载器实例——`"off"`（独立）、`"restart"`（中止同 `hash` 的进行中加载并以首个 loader 重新加载）、`"share"`（完全共享进行中加载与结果）
+- **错误兜底**：`defaultValue` 在最终失败（业务错误 / 重试耗尽后的超时）时吞掉错误并 resolve 兜底值
 
 ### 基本用法
 
@@ -551,6 +564,9 @@ loader.abort();                    // 中止加载
 | `timeout` | `number` | — | 每次尝试的超时（毫秒），`>0` 生效；超时视为一次可重试的失败 |
 | `retry` | `number` | `0` | 失败后的最大重试次数。主动 abort 不重试，超时与业务错误会重试 |
 | `retryDelay` | `number` | `0` | 每次重试前的等待毫秒数 |
+| `multiplex` | `"off" \| "restart" \| "share"` | `"off"` | 按 `hash` 复用加载器实例。`"off"`：各实例独立；`"restart"`：命中同 `hash` 且正在进行中的加载时，中止该加载并以首个实例的 loader 重新加载（后续 loader 被忽略）；`"share"`：完全共享首个实例进行中的加载与结果。非 `off` 且未提供 `hash` 时，基于 loader 函数自动生成 hash |
+| `defaultValue` | `T` | — | 最终失败（业务错误 / 重试耗尽后的超时）时 resolve 的兜底值。显式提供时 falsy 值（`0` / `""` / `null` / `false`）同样生效；对主动 abort 无效；不写入缓存 |
+| `storage` | `IStorage` | `MapStorage` | 缓存项的存储后端 |
 | `onBeforeLoad` | `() => void` | — | 加载开始前调用（仅实际加载时，缓存命中不触发）；回调内抛错会被忽略 |
 | `onAfterLoad` | `(result?, error?) => void` | — | 加载结束后调用（成功带 `result`，失败/中止带 `error`），缓存命中不触发；回调内抛错会被忽略 |
 
@@ -567,8 +583,8 @@ const loader = new AsyncLoader(
 await loader.get();  // 首次加载并写入缓存
 await loader.get();  // 命中缓存，不调用底层
 
-loader.clear();         // 清除当前实例缓存
-AsyncLoader.clearAll(); // 清除所有缓存
+loader.clear();    // 清除当前实例的缓存项
+loader.clearAll(); // 清除所有缓存（共享存储）
 ```
 
 ### 中止与超时
@@ -602,6 +618,58 @@ const loader = new AsyncLoader(
 );
 ```
 
+### 实例复用（multiplex）
+
+按 `hash` 复用加载器实例，对并发或重复加载去重。仅在提供了 `hash`（或基于 loader 函数自动生成）时生效：
+
+```typescript
+// "share"：相同 hash 的加载器共享同一次进行中加载
+const l1 = new AsyncLoader(fn, { hash: "req", multiplex: "share" });
+const l2 = new AsyncLoader(fn, { hash: "req", multiplex: "share" });
+console.log(l1 === l2); // true — 同一实例，底层只调用一次
+
+// "restart"：相同 hash 的新加载器会中止进行中加载并重新加载
+const a = new AsyncLoader(fnA, { hash: "req", multiplex: "restart" });
+const b = new AsyncLoader(fnB, { hash: "req", multiplex: "restart" });
+// a 的进行中加载被中止，以 fnA 重新加载（fnB 被忽略）
+```
+
+- `"off"`（默认）：各实例相互独立。
+- `"restart"`：命中同 `hash` 且**正在进行中**的实例时，中止它并以首个实例的 loader 重新加载。
+- `"share"`：命中同 `hash` 时完全共享进行中加载与结果。
+
+> 两种模式在命中的实例处于 pending（尚未加载）或未命中时行为一致。
+
+### 错误兜底（`defaultValue`）
+
+最终失败（业务错误，或重试耗尽后的超时）时，提供 `defaultValue` 会吞掉错误并 resolve 兜底值：
+
+```typescript
+const loader = new AsyncLoader(fetchUser, { defaultValue: defaultUser });
+
+const user = await loader.get(); // 失败时 resolve defaultUser 而非抛错
+```
+
+- 显式提供时 falsy 值（`0` / `""` / `null` / `false`）同样作为有效兜底。
+- 对主动 `abort()` **无效**（仍 reject `AbortError`）。
+- 兜底值不写入缓存，下次 `get()` 会重新加载以获取真实值。
+
+### 刷新与失效
+
+`refresh()` 强制重新加载（忽略有效缓存）；`invalidate()` 标记数据失效，下次 `get()` 重新加载：
+
+```typescript
+const loader = new AsyncLoader(fn, { cache: 60_000, hash: "data" });
+await loader.get();
+
+await loader.refresh(); // 立即强制重载，返回新结果（若有进行中加载先中止）
+loader.invalidate();    // 标记失效；下次 get() 才重新加载
+await loader.get();     // 重新加载
+```
+
+- `refresh(args?)`：清除缓存并立即重新加载；若有进行中加载先中止。返回新结果。
+- `invalidate()`：清除缓存项并重置已完成的信号，但**不立即触发加载**——由下次 `get()` 触发。与 `clear()` 不同，无缓存（`cache=0`）时也生效。
+
 ### API 参考
 
 **构造函数：**
@@ -616,14 +684,17 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 | --- | --- |
 | `get(args?)` | 获取加载结果；首次/缓存失效/上次失败时自动触发加载。`args` 透传给内部 signal（`timeout` 为等待超时，与 `options.timeout` 加载超时语义不同） |
 | `load()` | 触发一次加载（通常无需手动调用，`get()` 会自动触发） |
+| `refresh(args?)` | 强制重新加载，忽略有效缓存；若有进行中加载先中止，再重新加载并返回新结果。`args` 透传给内部 signal |
+| `invalidate()` | 标记数据失效：清除缓存项并重置已完成的信号，使下次 `get()` 重新加载。不立即触发加载。与 `clear()` 不同，无缓存（`cache=0`）时也生效 |
 | `abort()` | 中止加载，穿透到底层请求；处于重试等待中时一并终止 |
 | `clear()` | 清除当前实例的缓存项 |
+| `clearAll()` | 清空共享存储中的全部缓存项 |
 
 **静态方法：**
 
 | 方法 | 说明 |
 | --- | --- |
-| `AsyncLoader.clearAll()` | 清除所有实例共享的全部缓存项 |
+| `AsyncLoader.clearLoaderCache()` | 清空 multiplex 进行中实例缓存表；主要用于共享 `hash` 的测试用例间隔离 |
 
 **实例属性：**
 
@@ -631,6 +702,8 @@ new AsyncLoader<T>(loader: (args: AsyncLoaderArgs) => Promise<T>, options?: Asyn
 | --- | --- |
 | `signal` | 内部承载结果的 `IAsyncSignal`，可观察状态与 `result` / `error` |
 | `loading` | 是否正在加载（含重试过程） |
+| `loader` | 底层加载函数（构造函数第一个参数） |
+| `hash` | 缓存/复用键（显式提供或自动生成） |
 | `options` | 合并默认值后的构造选项 |
 
 ## 开源项目
