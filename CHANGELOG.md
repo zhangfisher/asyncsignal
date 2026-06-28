@@ -1,5 +1,11 @@
 # asyncsignal
 
+## 0.2.2
+
+### Patch Changes
+
+- 3270c83: 新增加 asyncLoader.meta 用于保存一些额外的元数据
+
 ## 0.2.1
 
 ### Patch Changes
